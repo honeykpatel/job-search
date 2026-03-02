@@ -110,6 +110,32 @@ st.markdown(
         box-shadow: var(--shadow);
         margin-bottom: 10px;
     }
+    .chat-shell {
+        border: 1px solid var(--stroke);
+        background: white;
+        border-radius: 16px;
+        padding: 12px;
+        box-shadow: var(--shadow);
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+    .chat-hint {
+        background: #f8fafc;
+        border: 1px dashed var(--stroke);
+        border-radius: 12px;
+        padding: 10px 12px;
+        color: var(--muted);
+        margin-bottom: 10px;
+    }
+    [data-testid="stChatInput"] {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        border-top: 1px solid var(--stroke);
+        padding-top: 8px;
+        margin-top: 8px;
+        z-index: 5;
+    }
     .pill {
         display: inline-block;
         padding: 4px 10px;
@@ -355,25 +381,34 @@ with tab_matching:
 with tab_memory:
     st.write("### Agent / Memory")
     st.caption("Ask about your saved sessions, jobs, and resume.")
-    show_tool_debug = st.checkbox("Show tool results (debug)")
+    controls = st.columns([1, 1, 2])
+    with controls[0]:
+        show_tool_debug = st.checkbox("Show tool results (debug)")
+    with controls[1]:
+        if st.button("Clear chat"):
+            st.session_state["memory_messages"] = []
+    with controls[2]:
+        st.markdown(
+            '<div class="chat-hint">Try: "What companies showed up most?" or "Summarize last session."</div>',
+            unsafe_allow_html=True,
+        )
 
     if "memory_messages" not in st.session_state:
         st.session_state["memory_messages"] = []
 
-    for msg in st.session_state["memory_messages"]:
-        if msg["role"] == "tool" and not show_tool_debug:
-            continue
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    def _handle_memory_submit():
+        prompt = st.session_state.get("memory_input", "").strip()
+        if prompt:
+            st.session_state["_memory_pending"] = prompt
+        st.session_state["memory_input"] = ""
 
-    user_prompt = st.chat_input("Ask a question about your job search history...")
-    if user_prompt:
+    pending = st.session_state.pop("_memory_pending", None)
+    if pending:
         existing_len = len(st.session_state["memory_messages"])
+        st.session_state["memory_messages"].append({"role": "user", "content": pending})
         st.session_state["memory_messages"].append(
-            {"role": "user", "content": user_prompt}
+            {"role": "assistant", "content": "_Thinking…_"}
         )
-        with st.chat_message("user"):
-            st.markdown(user_prompt)
 
         graph = build_graph()
         lc_messages = []
@@ -381,9 +416,11 @@ with tab_memory:
             if msg["role"] == "user":
                 lc_messages.append(HumanMessage(content=msg["content"]))
             elif msg["role"] == "assistant":
-                lc_messages.append(AIMessage(content=msg["content"]))
+                if msg["content"] != "_Thinking…_":
+                    lc_messages.append(AIMessage(content=msg["content"]))
 
-        result = graph.invoke({"messages": lc_messages})
+        with st.spinner("Running tools..."):
+            result = graph.invoke({"messages": lc_messages})
         new_messages = result["messages"][len(lc_messages):]
 
         last_assistant = None
@@ -396,13 +433,38 @@ with tab_memory:
                     with st.chat_message("tool"):
                         st.markdown(msg.content)
             elif msg.type in ("assistant", "ai"):
-                st.session_state["memory_messages"].append(
-                    {"role": "assistant", "content": msg.content}
-                )
                 last_assistant = msg.content
 
         if last_assistant:
-            with st.chat_message("assistant"):
-                st.markdown(last_assistant)
+            st.session_state["memory_messages"] = [
+                m for m in st.session_state["memory_messages"] if m["content"] != "_Thinking…_"
+            ]
+            st.session_state["memory_messages"].append(
+                {"role": "assistant", "content": last_assistant}
+            )
+
+    st.markdown('<div class="chat-shell" id="chat-shell">', unsafe_allow_html=True)
+    for msg in st.session_state["memory_messages"]:
+        if msg["role"] == "tool" and not show_tool_debug:
+            continue
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.chat_input(
+        "Ask a question about your job search history…",
+        key="memory_input",
+        on_submit=_handle_memory_submit,
+    )
+
+    st.markdown(
+        """
+        <script>
+        const shell = parent.document.querySelector('#chat-shell');
+        if (shell) { shell.scrollTop = shell.scrollHeight; }
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 
 st.caption("Notes: All data is local SQLite. No resume leaves your machine.")
