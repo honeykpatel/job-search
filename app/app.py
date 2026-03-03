@@ -144,7 +144,7 @@ def _new_chat_dialog():
 
     job_labels = [
         (
-            f"{job['id']} | {job.get('title') or 'Untitled'} | "
+            f"{job.get('title') or 'Untitled'} | "
             f"{job.get('company') or 'Unknown'}"
         )
         for job in matched_jobs
@@ -435,6 +435,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if st.session_state.get("_flash_success"):
+    st.success(st.session_state.pop("_flash_success"))
+
 pages = [
     "Job Search",
     "Resume",
@@ -471,6 +474,7 @@ with st.sidebar:
                 type="primary" if is_active_page else "secondary",
             ):
                 st.session_state["active_page"] = page
+                st.rerun()
         active_page = st.session_state["active_page"]
 
     if "selected_session_id" not in st.session_state:
@@ -641,7 +645,8 @@ if active_page == "Job Search":
                 st.warning("Job Title is required to save a session.")
             else:
                 sid = save_session(job_title.strip(), location.strip(), work_style, int(k))
-                st.success(f"Saved session #{sid}")
+                st.session_state["_flash_success"] = f"Saved session #{sid}"
+                st.rerun()
 
     if do_search:
         if not job_title.strip():
@@ -716,7 +721,8 @@ if active_page == "Resume":
         text = extract_text(up)
         rid = save_resume(up.name, text)
         st.session_state["selected_resume_id"] = rid
-        st.success(f"Saved resume #{rid}")
+        st.session_state["_flash_success"] = f"Saved resume #{rid}"
+        st.rerun()
         st.text_area("Extracted text (preview)", text[:4000], height=250)
 
     selected_resume = None
@@ -863,7 +869,7 @@ if active_page == "Applications":
             company = job.get("company") or "Unknown company"
             status = job.get("application_status") or "saved"
             labels.append(
-                f"{job['id']} | {job.get('title') or 'Untitled'} | {company} | {status}"
+                f"{job.get('title') or 'Untitled'} | {company} | {status}"
             )
         for idx, job in enumerate(jobs):
             if job["id"] == st.session_state["selected_application_job_id"]:
