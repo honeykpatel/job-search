@@ -1,12 +1,40 @@
+from pathlib import Path
+import os
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 from storage.db import init_db, save_session, list_sessions
 from collectors.rss_remoteok import search_remoteok
-from storage.db import save_jobs_for_session, get_jobs_for_session
+from storage.db import delete_session, save_jobs_for_session, get_jobs_for_session
 from collectors.api_remotive import search_remotive
 from collectors.board_greenhouse import search_greenhouse
 from collectors.board_ashby import search_ashby
 from utils.dedupe import dedupe_jobs
-from storage.db import save_resume, get_latest_resume, list_recent_jobs
+from storage.db import (
+    add_chat_message,
+    clear_chat_thread,
+    create_chat_thread,
+    delete_application,
+    delete_chat_thread,
+    delete_resume,
+    get_chat_thread,
+    get_job,
+    get_resume,
+    list_applications as db_list_applications,
+    list_chat_threads,
+    list_recent_jobs,
+    list_resumes as db_list_resumes,
+    get_chat_messages,
+    save_resume,
+    search_jobs as db_search_jobs,
+    get_latest_resume,
+    touch_chat_thread,
+    upsert_application,
+)
 from parsing.resume_text import extract_text
 from matching.tfidf_ranker import rank_jobs
 from memory.graph import build_graph
@@ -28,6 +56,128 @@ def _interleave_jobs(job_lists: list[list[dict]], limit: int) -> list[dict]:
         lists = next_lists
     return out
 
+
+def _get_memory_setup_error() -> str | None:
+    if not os.getenv("OPENAI_API_KEY"):
+        return (
+            "Missing OPENAI_API_KEY. Set it in your environment or in a local .env file "
+            "to enable Agent chat."
+        )
+    return None
+
+
+def _thread_title_from_context(job: dict | None, resume: dict | None) -> str:
+    job_title = (job or {}).get("title") or "Untitled job"
+    company = (job or {}).get("company") or "Unknown company"
+    resume_name = (resume or {}).get("filename") or "No resume"
+    return f"{job_title} @ {company} [{resume_name}]"
+
+
+def _build_thread_context(job: dict | None, resume: dict | None) -> str | None:
+    if not job and not resume:
+        return None
+
+    lines = [
+        "Thread context for this conversation:",
+        "Use this job and resume as the default context unless the user explicitly switches.",
+    ]
+    if job:
+        lines.extend(
+            [
+                f"Job ID: {job.get('id')}",
+                f"Job title: {job.get('title') or 'Unknown'}",
+                f"Company: {job.get('company') or 'Unknown'}",
+                f"Location: {job.get('location') or 'Unknown'}",
+                f"Source: {job.get('source') or 'Unknown'}",
+                f"URL: {job.get('url') or 'Unknown'}",
+                f"Job description: {job.get('description') or 'Unavailable'}",
+                f"Application status: {job.get('application_status') or 'not_tracked'}",
+                f"Application notes: {job.get('application_notes') or ''}",
+            ]
+        )
+    if resume:
+        lines.extend(
+            [
+                f"Resume ID: {resume.get('id')}",
+                f"Resume filename: {resume.get('filename') or 'Unknown'}",
+                f"Resume text: {resume.get('text') or ''}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _sidebar_thread_label(thread: dict) -> str:
+    title = (thread.get("title") or "Untitled chat").strip()
+    return title if len(title) <= 42 else f"{title[:39]}..."
+
+
+@st.dialog("New Agent Chat")
+def _new_chat_dialog():
+    resumes = db_list_resumes(100)
+    if not resumes:
+        st.info("Save at least one resume first, then create a chat.")
+        return
+
+    resume_labels = [
+        f"{resume['id']} | {resume['filename']} | {resume['created_at'][:10]}"
+        for resume in resumes
+    ]
+    selected_resume_label = st.selectbox(
+        "Resume",
+        resume_labels,
+        key="dialog_new_chat_resume",
+    )
+    selected_resume = resumes[resume_labels.index(selected_resume_label)]
+
+    matched_jobs = [
+        job
+        for job, _score in rank_jobs(
+            selected_resume["text"],
+            list_recent_jobs(300),
+            top_k=25,
+        )
+    ]
+
+    if not matched_jobs:
+        st.info("No saved jobs are available to match against that resume yet.")
+        return
+
+    job_labels = [
+        (
+            f"{job['id']} | {job.get('title') or 'Untitled'} | "
+            f"{job.get('company') or 'Unknown'}"
+        )
+        for job in matched_jobs
+    ]
+    selected_job_label = st.selectbox(
+        "Matched job",
+        job_labels,
+        key="dialog_new_chat_job",
+    )
+    selected_job = matched_jobs[job_labels.index(selected_job_label)]
+
+    st.markdown(
+        f"""
+        <div class="memory-context-strip">
+          <span class="memory-context-label">New chat</span>
+          <span class="pill">{selected_job.get('title') or 'Untitled'}</span>
+          <span class="pill">{selected_job.get('company') or 'Unknown'}</span>
+          <span class="pill">{selected_job.get('location') or 'Unknown'}</span>
+          <span class="pill">{selected_resume.get('filename') or 'No resume'}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button("Open chat", key="dialog_open_chat", type="primary", use_container_width=True):
+        thread_id = create_chat_thread(
+            title=_thread_title_from_context(selected_job, selected_resume),
+            job_id=selected_job["id"],
+            resume_id=selected_resume["id"],
+        )
+        st.session_state["selected_thread_id"] = thread_id
+        st.rerun()
+
 st.set_page_config(page_title="Job Search Agent (Local)", layout="wide")
 
 st.markdown(
@@ -39,6 +189,8 @@ st.markdown(
         --muted: #5b6a7a;
         --accent: #0ea5a3;
         --accent-2: #f59e0b;
+        --bg: #f3f7fb;
+        --bg-soft: #fbfdff;
         --panel: #f5f7fb;
         --panel-2: #eef2f7;
         --stroke: #d9e2ec;
@@ -48,9 +200,30 @@ st.markdown(
         font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
         color: var(--ink);
     }
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        background: linear-gradient(180deg, var(--bg) 0%, #ffffff 38%, var(--bg-soft) 100%);
+        color: var(--ink);
+    }
+    [data-testid="stAppViewContainer"] > .main,
+    [data-testid="stMainBlockContainer"] {
+        background: transparent;
+        color: var(--ink);
+    }
+    p, span, label, li, div, .stMarkdown, .stText, .stAlert, .stRadio, .stSelectbox label,
+    .stTextInput label, .stNumberInput label, .stSlider label, .stCheckbox label {
+        color: var(--ink);
+    }
+    [data-testid="stHeader"] {
+        background: rgba(243, 247, 251, 0.82);
+        backdrop-filter: blur(10px);
+    }
     h1, h2, h3, .stTitle {
         font-family: "DM Serif Display", serif;
         letter-spacing: 0.2px;
+        color: var(--ink);
+    }
+    [data-testid="stToolbar"] {
+        color: var(--ink);
     }
     .app-hero {
         background: radial-gradient(1200px 400px at 10% -10%, #b3e5ff 0%, transparent 60%),
@@ -72,6 +245,22 @@ st.markdown(
         background: var(--panel);
         border-right: 1px solid var(--stroke);
     }
+    section[data-testid="stSidebar"] * {
+        color: var(--ink);
+    }
+    section[data-testid="stSidebar"] > div:first-child > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"]:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--panel);
+        padding-top: 0.5rem;
+        padding-bottom: 0.75rem;
+    }
+    section[data-testid="stSidebar"] > div:first-child > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"]:nth-child(2) {
+        max-height: calc(100vh - 12rem);
+        overflow-y: auto;
+        padding-right: 0.2rem;
+    }
     .stTabs [role="tablist"] {
         gap: 8px;
         padding: 6px;
@@ -83,21 +272,66 @@ st.markdown(
         border-radius: 12px;
         border: 1px solid transparent;
         font-weight: 600;
+        color: var(--ink);
+        background: transparent;
     }
     .stTabs [aria-selected="true"] {
         background: white;
         border-color: var(--stroke);
         box-shadow: 0 4px 16px rgba(16, 24, 40, 0.06);
     }
+    .stTabs [data-baseweb="tab-highlight"] {
+        background: var(--accent);
+    }
     .stButton button, .stLinkButton a {
         border-radius: 12px !important;
         border: 1px solid var(--stroke) !important;
         background: white !important;
+        color: var(--ink) !important;
     }
     .stButton button[kind="primary"] {
         background: linear-gradient(135deg, var(--accent), #22c1c3) !important;
         color: white !important;
         border: none !important;
+    }
+    .stTextInput input,
+    .stTextArea textarea,
+    .stSelectbox [data-baseweb="select"] > div,
+    .stMultiSelect [data-baseweb="select"] > div,
+    .stNumberInput input,
+    [data-testid="stFileUploader"] section,
+    [data-testid="stChatInput"] textarea {
+        background: #ffffff !important;
+        color: var(--ink) !important;
+        border: 1px solid var(--stroke) !important;
+    }
+    .stTextInput input::placeholder,
+    .stTextArea textarea::placeholder {
+        color: var(--muted) !important;
+    }
+    [data-baseweb="select"] * {
+        color: var(--ink) !important;
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.92);
+    }
+    [data-testid="stExpander"] details summary,
+    [data-testid="stExpander"] details summary * {
+        color: var(--ink) !important;
+    }
+    [data-testid="stMetric"], [data-testid="stChatMessage"] {
+        color: var(--ink);
+    }
+    [data-testid="stChatMessage"] {
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        padding: 0.35rem 0.75rem;
+    }
+    [data-testid="stCodeBlock"] {
+        border-radius: 12px;
     }
     .stCaption {
         color: var(--muted);
@@ -155,85 +389,259 @@ st.markdown(
     .kpi .label { color: var(--muted); font-size: 12px; }
     .kpi .value { font-size: 20px; font-weight: 700; }
     .section-title { margin-top: 6px; }
+    .memory-context-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 14px;
+        padding: 10px 12px;
+        box-shadow: var(--shadow);
+        margin-bottom: 10px;
+    }
+    .memory-context-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+    }
+    .agent-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px 14px;
+        margin-bottom: 8px;
+    }
+    .agent-header-title {
+        font-family: "DM Serif Display", serif;
+        font-size: 30px;
+        line-height: 1;
+        margin: 0;
+    }
+    .agent-header-copy {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0;
+    }
+    .agent-chat-shell {
+        min-height: 62vh;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <div class="app-hero">
-      <div class="title">Job Search Agent</div>
-      <p class="subtitle">Local search, resume matching, and memory Q&A in one place.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+pages = [
+    "Job Search",
+    "Resume",
+    "Matching",
+    "Applications",
+    "Agent",
+]
 
-cols = st.columns(3)
-with cols[0]:
-    st.markdown(
-        '<div class="kpi"><div class="label">Saved sessions</div><div class="value">'
-        + str(len(list_sessions(100)))
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
-with cols[1]:
-    latest_resume = get_latest_resume()
-    st.markdown(
-        '<div class="kpi"><div class="label">Resume status</div><div class="value">'
-        + ("Ready" if latest_resume else "Missing")
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
-with cols[2]:
-    st.markdown(
-        '<div class="kpi"><div class="label">Sources</div><div class="value">RemoteOK · Remotive · Boards</div></div>',
-        unsafe_allow_html=True,
-    )
-
-tab_search, tab_resume, tab_matching, tab_memory = st.tabs(
-    ["Job Search", "Resume", "Matching", "Agent / Memory"]
-)
+job_title = ""
+location = ""
+work_style = "Any"
+k = 5
+do_search = False
+greenhouse_board = ""
+ashby_board = ""
+selected_thread_id = None
+show_tool_debug = False
 
 with st.sidebar:
-    st.header("Search")
-    with st.form("search_form"):
-        job_title = st.text_input("Job Title", placeholder="e.g., Data Analyst")
-        location = st.text_input(
-            "Location (optional)", placeholder="e.g., Indianapolis, IN"
-        )
-        work_style = st.selectbox("Work Style", ["Any", "Remote", "Hybrid", "Onsite"])
-        k = st.slider("Number of results", 1, 20, 5)
-        submitted = st.form_submit_button("Search for Jobs")
-    do_search = submitted
+    workspace_sidebar = st.container()
+    chats_sidebar = st.container()
 
-    st.caption("Optional company boards (Greenhouse / Ashby). Paste URL or slug.")
-    greenhouse_board = st.text_input("Greenhouse board", placeholder="e.g., greenhouse.io/acme")
-    ashby_board = st.text_input("Ashby board", placeholder="e.g., jobs.ashbyhq.com/acme")
+    if "active_page" not in st.session_state:
+        st.session_state["active_page"] = pages[0]
 
-    if st.button("Save this search"):
-        if not job_title.strip():
-            st.warning("Job Title is required to save a session.")
-        else:
-            sid = save_session(job_title.strip(), location.strip(), work_style, int(k))
-            st.success(f"Saved session #{sid}")
+    with workspace_sidebar:
+        st.header("Workspace")
+        for page in pages:
+            is_active_page = st.session_state["active_page"] == page
+            if st.button(
+                page,
+                key=f"workspace_nav_{page}",
+                use_container_width=True,
+                type="primary" if is_active_page else "secondary",
+            ):
+                st.session_state["active_page"] = page
+        active_page = st.session_state["active_page"]
 
-    st.divider()
-    st.subheader("Saved sessions")
-    st.caption("Pick a past session to review jobs in the Search tab.")
-    rows = list_sessions(15)
-    labels = [f"#{r[0]} {r[1]} ({r[5][:10]})" for r in rows]
-    selected = st.selectbox("Pick one", ["(none)"] + labels)
+    if "selected_session_id" not in st.session_state:
+        st.session_state["selected_session_id"] = None
+    if "selected_thread_id" not in st.session_state:
+        st.session_state["selected_thread_id"] = None
 
-    st.session_state["selected_session_id"] = None
-    if selected != "(none)":
-        idx = labels.index(selected)
-        st.session_state["selected_session_id"] = rows[idx][0]
+    if active_page == "Agent":
+        with chats_sidebar:
+            st.divider()
+            st.subheader("Chats")
+            selected_thread_id = st.session_state["selected_thread_id"]
+            if st.button("New chat", key="sidebar_new_chat", use_container_width=True, type="primary"):
+                _new_chat_dialog()
+            threads = list_chat_threads(100)
+            if not threads:
+                st.caption("No chats yet.")
+            for thread in threads:
+                is_active = st.session_state["selected_thread_id"] == thread["id"]
+                thread_cols = st.columns([5, 1])
+                with thread_cols[0]:
+                    if st.button(
+                        _sidebar_thread_label(thread),
+                        key=f"thread_nav_{thread['id']}",
+                        use_container_width=True,
+                        type="primary" if is_active else "secondary",
+                    ):
+                        st.session_state["selected_thread_id"] = thread["id"]
+                        selected_thread_id = thread["id"]
+                with thread_cols[1]:
+                    if st.button("x", key=f"thread_delete_{thread['id']}", use_container_width=True):
+                        delete_chat_thread(thread["id"])
+                        if st.session_state["selected_thread_id"] == thread["id"]:
+                            st.session_state["selected_thread_id"] = None
+                        st.rerun()
+            show_tool_debug = st.checkbox("Show tools", key="memory_show_tool_debug")
+    elif active_page == "Job Search":
+        with chats_sidebar:
+            st.divider()
+            st.subheader("Saved Sessions")
+            rows = list_sessions(100)
+            if not rows:
+                st.caption("No saved sessions yet.")
+            for row in rows:
+                session_id = row[0]
+                label = f"{row[1]} ({row[5][:10]})"
+                is_active = st.session_state["selected_session_id"] == session_id
+                session_cols = st.columns([5, 1])
+                with session_cols[0]:
+                    if st.button(
+                        label if len(label) <= 42 else f"{label[:39]}...",
+                        key=f"session_nav_{session_id}",
+                        use_container_width=True,
+                        type="primary" if is_active else "secondary",
+                    ):
+                        st.session_state["selected_session_id"] = session_id
+                with session_cols[1]:
+                    if st.button("x", key=f"session_delete_{session_id}", use_container_width=True):
+                        delete_session(session_id)
+                        if st.session_state["selected_session_id"] == session_id:
+                            st.session_state["selected_session_id"] = None
+                        st.rerun()
+    elif active_page == "Resume":
+        with chats_sidebar:
+            st.divider()
+            st.subheader("Saved Resumes")
+            resumes = db_list_resumes(100)
+            if "selected_resume_id" not in st.session_state:
+                st.session_state["selected_resume_id"] = None
+            if not resumes:
+                st.caption("No saved resumes yet.")
+            for resume in resumes:
+                resume_id = resume["id"]
+                label = f"{resume['filename']} ({resume['created_at'][:10]})"
+                is_active = st.session_state["selected_resume_id"] == resume_id
+                resume_cols = st.columns([5, 1])
+                with resume_cols[0]:
+                    if st.button(
+                        label if len(label) <= 42 else f"{label[:39]}...",
+                        key=f"resume_nav_{resume_id}",
+                        use_container_width=True,
+                        type="primary" if is_active else "secondary",
+                    ):
+                        st.session_state["selected_resume_id"] = resume_id
+                with resume_cols[1]:
+                    if st.button("x", key=f"resume_delete_{resume_id}", use_container_width=True):
+                        delete_resume(resume_id)
+                        if st.session_state["selected_resume_id"] == resume_id:
+                            st.session_state["selected_resume_id"] = None
+                        st.rerun()
+    elif active_page == "Applications":
+        with chats_sidebar:
+            st.divider()
+            st.subheader("Tracked Applications")
+            applications = db_list_applications(limit=200)
+            if "selected_application_job_id" not in st.session_state:
+                st.session_state["selected_application_job_id"] = None
+            if not applications:
+                st.caption("No tracked applications yet.")
+            for item in applications:
+                job_id = item["job_id"]
+                label = f"{item.get('job_title') or 'Untitled'} ({item.get('status') or 'saved'})"
+                is_active = st.session_state["selected_application_job_id"] == job_id
+                application_cols = st.columns([5, 1])
+                with application_cols[0]:
+                    if st.button(
+                        label if len(label) <= 42 else f"{label[:39]}...",
+                        key=f"application_nav_{job_id}",
+                        use_container_width=True,
+                        type="primary" if is_active else "secondary",
+                    ):
+                        st.session_state["selected_application_job_id"] = job_id
+                with application_cols[1]:
+                    if st.button("x", key=f"application_delete_{job_id}", use_container_width=True):
+                        delete_application(job_id)
+                        if st.session_state["selected_application_job_id"] == job_id:
+                            st.session_state["selected_application_job_id"] = None
+                        st.rerun()
+    else:
+        st.session_state["selected_thread_id"] = None
 
-with tab_search:
+if active_page == "Job Search":
     st.write("### Search")
-    st.caption("Use the sidebar to run searches and load past sessions.")
+    st.caption("Search, save, and reopen sessions from the main workspace.")
+
+    filter_cols = st.columns([2, 2, 1, 1])
+    with filter_cols[0]:
+        job_title = st.text_input(
+            "Job Title",
+            placeholder="e.g., Data Analyst",
+            key="search_job_title",
+        )
+    with filter_cols[1]:
+        location = st.text_input(
+            "Location (optional)",
+            placeholder="e.g., Indianapolis, IN",
+            key="search_location",
+        )
+    with filter_cols[2]:
+        work_style = st.selectbox(
+            "Work Style",
+            ["Any", "Remote", "Hybrid", "Onsite"],
+            key="search_work_style",
+        )
+    with filter_cols[3]:
+        k = st.slider("Results", 1, 20, 5, key="search_k")
+
+    board_cols = st.columns(2)
+    with board_cols[0]:
+        greenhouse_board = st.text_input(
+            "Greenhouse board",
+            placeholder="e.g., greenhouse.io/acme",
+            key="search_greenhouse_board",
+        )
+    with board_cols[1]:
+        ashby_board = st.text_input(
+            "Ashby board",
+            placeholder="e.g., jobs.ashbyhq.com/acme",
+            key="search_ashby_board",
+        )
+
+    action_cols = st.columns([1, 1, 3])
+    with action_cols[0]:
+        do_search = st.button("Search for Jobs", key="search_submit")
+    with action_cols[1]:
+        if st.button("Save this search", key="save_search"):
+            if not job_title.strip():
+                st.warning("Job Title is required to save a session.")
+            else:
+                sid = save_session(job_title.strip(), location.strip(), work_style, int(k))
+                st.success(f"Saved session #{sid}")
 
     if do_search:
         if not job_title.strip():
@@ -297,30 +705,49 @@ with tab_search:
                 )
                 st.link_button("Open posting", url)
 
-with tab_resume:
+if active_page == "Resume":
     st.write("### Upload your resume (PDF or DOCX)")
     st.caption("Tip: Save a resume once, then use Matching or Agent tabs.")
+    if "selected_resume_id" not in st.session_state:
+        st.session_state["selected_resume_id"] = None
     up = st.file_uploader("Resume", type=["pdf", "docx"])
 
     if up and st.button("Save Resume"):
         text = extract_text(up)
         rid = save_resume(up.name, text)
+        st.session_state["selected_resume_id"] = rid
         st.success(f"Saved resume #{rid}")
         st.text_area("Extracted text (preview)", text[:4000], height=250)
 
-    latest = get_latest_resume()
-    if latest:
-        st.write(f"**Latest resume:** #{latest[0]} — {latest[1]} — {latest[3]}")
+    selected_resume = None
+    if st.session_state["selected_resume_id"] is not None:
+        selected_resume = get_resume(st.session_state["selected_resume_id"])
+
+    if selected_resume:
+        st.write(
+            f"**Selected resume:** #{selected_resume['id']} - {selected_resume['filename']} - {selected_resume['created_at']}"
+        )
+        st.text_area(
+            "Saved resume text",
+            selected_resume["text"][:6000],
+            height=320,
+            disabled=True,
+            key=f"resume_view_{selected_resume['id']}",
+        )
+    else:
+        latest = get_latest_resume()
+        if latest:
+            st.write(f"**Latest resume:** #{latest[0]} - {latest[1]} - {latest[3]}")
 
 
-with tab_matching:
+if active_page == "Matching":
     st.write("### Top Matches")
     st.caption("Ranks recent saved jobs against your latest resume using TF-IDF.")
     latest = get_latest_resume()
     if not latest:
         st.warning("No resume found. Upload and save a resume first.")
     else:
-        st.write(f"**Latest resume:** #{latest[0]} — {latest[1]} — {latest[3]}")
+        st.write(f"**Latest resume:** #{latest[0]} - {latest[1]} - {latest[3]}")
 
     top_k = st.slider("Top matches", 1, 20, 5)
     show_debug = st.toggle("Show debug text for top match")
@@ -378,23 +805,222 @@ with tab_matching:
                         height=200,
                     )
 
-with tab_memory:
-    st.write("### Agent / Memory")
-    st.caption("Ask about your saved sessions, jobs, and resume.")
-    controls = st.columns([1, 1, 2])
-    with controls[0]:
-        show_tool_debug = st.checkbox("Show tool results (debug)")
-    with controls[1]:
-        if st.button("Clear chat"):
-            st.session_state["memory_messages"] = []
-    with controls[2]:
-        st.markdown(
-            '<div class="chat-hint">Try: "What companies showed up most?" or "Summarize last session."</div>',
-            unsafe_allow_html=True,
+if active_page == "Applications":
+    st.write("### Applications")
+    st.caption("This is the application tracker. Changes here are stored in the database and can also be updated by the Agent.")
+    if "selected_application_job_id" not in st.session_state:
+        st.session_state["selected_application_job_id"] = None
+
+    all_applications = db_list_applications(limit=200)
+    app_cols = st.columns(4)
+    status_counts = {
+        "Tracked": len(all_applications),
+        "Applied": sum(1 for item in all_applications if item["status"] == "applied"),
+        "Interview": sum(1 for item in all_applications if item["status"] == "interview"),
+        "Offer": sum(1 for item in all_applications if item["status"] == "offer"),
+    }
+    for col, (label, value) in zip(app_cols, status_counts.items()):
+        with col:
+            st.markdown(
+                f'<div class="kpi"><div class="label">{label}</div><div class="value">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
+
+    filter_cols = st.columns([2, 1, 1])
+    with filter_cols[0]:
+        application_query = st.text_input(
+            "Search saved jobs",
+            placeholder="Title, company, location, keyword...",
+            key="applications_query",
+        )
+    with filter_cols[1]:
+        status_filter = st.selectbox(
+            "Status filter",
+            ["All", "saved", "applied", "interview", "offer", "rejected", "archived"],
+            key="applications_status_filter",
+        )
+    with filter_cols[2]:
+        application_limit = st.slider(
+            "Jobs shown",
+            5,
+            100,
+            20,
+            key="applications_limit",
         )
 
-    if "memory_messages" not in st.session_state:
-        st.session_state["memory_messages"] = []
+    jobs = db_search_jobs(
+        query=application_query,
+        limit=int(application_limit),
+        status=None if status_filter == "All" else status_filter,
+    )
+
+    if not jobs:
+        st.info("No saved jobs match the current filters.")
+    else:
+        labels = []
+        selected_index = 0
+        for job in jobs:
+            company = job.get("company") or "Unknown company"
+            status = job.get("application_status") or "saved"
+            labels.append(
+                f"{job['id']} | {job.get('title') or 'Untitled'} | {company} | {status}"
+            )
+        for idx, job in enumerate(jobs):
+            if job["id"] == st.session_state["selected_application_job_id"]:
+                selected_index = idx
+                break
+
+        selected_job_label = st.selectbox(
+            "Select a saved job",
+            labels,
+            key="applications_selected_job",
+            index=selected_index,
+        )
+        selected_job = jobs[labels.index(selected_job_label)]
+        st.session_state["selected_application_job_id"] = selected_job["id"]
+
+        st.markdown(
+            f"""
+            <div class="card">
+              <div><strong>{selected_job.get('title') or 'Untitled'}</strong></div>
+              <div class="pill">{selected_job.get('company') or 'Unknown'}</div>
+              <div class="pill">{selected_job.get('location') or 'Unknown'}</div>
+              <div class="pill">{selected_job.get('source') or 'Unknown'}</div>
+              <div class="pill">{selected_job.get('application_status') or 'not tracked'}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if selected_job.get("url"):
+            st.link_button("Open posting", selected_job["url"])
+        if selected_job.get("description"):
+            st.text_area(
+                "Job description",
+                selected_job["description"][:6000],
+                height=220,
+                disabled=True,
+                key=f"job_description_{selected_job['id']}",
+            )
+
+        resumes = db_list_resumes(100)
+        resume_label_to_id = {"(none)": None}
+        for resume in resumes:
+            resume_label_to_id[
+                f"{resume['id']} | {resume['filename']} | {resume['created_at'][:10]}"
+            ] = resume["id"]
+
+        current_resume_id = selected_job.get("resume_id")
+        current_resume_label = "(none)"
+        for label, resume_id in resume_label_to_id.items():
+            if resume_id == current_resume_id:
+                current_resume_label = label
+                break
+
+        form_cols = st.columns(2)
+        with form_cols[0]:
+            selected_status = st.selectbox(
+                "Application status",
+                ["saved", "applied", "interview", "offer", "rejected", "archived"],
+                index=[
+                    "saved",
+                    "applied",
+                    "interview",
+                    "offer",
+                    "rejected",
+                    "archived",
+                ].index(selected_job.get("application_status") or "saved"),
+                key=f"application_status_{selected_job['id']}",
+            )
+        with form_cols[1]:
+            selected_resume_label = st.selectbox(
+                "Attached resume",
+                list(resume_label_to_id.keys()),
+                index=list(resume_label_to_id.keys()).index(current_resume_label),
+                key=f"application_resume_{selected_job['id']}",
+            )
+
+        application_notes = st.text_area(
+            "Notes",
+            value=selected_job.get("application_notes") or "",
+            height=180,
+            key=f"application_notes_{selected_job['id']}",
+            placeholder="Interview prep notes, recruiter details, follow-up plan, cover letter points...",
+        )
+
+        action_label = (
+            "Update tracker"
+            if selected_job.get("application_id")
+            else "Start tracking this application"
+        )
+        if st.button(action_label, key=f"save_application_{selected_job['id']}"):
+            updated = upsert_application(
+                job_id=selected_job["id"],
+                resume_id=resume_label_to_id[selected_resume_label],
+                status=selected_status,
+                notes=application_notes,
+            )
+            st.success(
+                f"Tracker updated for {updated['job_title']} with status '{updated['status']}'."
+            )
+
+if active_page == "Agent":
+    st.markdown(
+        """
+        <div class="agent-header">
+          <div class="agent-header-title">Agent</div>
+          <p class="agent-header-copy">Focused chat for the selected job and resume.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    memory_setup_error = _get_memory_setup_error()
+    if memory_setup_error:
+        st.warning(memory_setup_error)
+
+    selected_thread = get_chat_thread(selected_thread_id) if selected_thread_id else None
+    selected_thread_job = (
+        get_job(selected_thread["job_id"])
+        if selected_thread and selected_thread.get("job_id")
+        else None
+    )
+    selected_thread_resume = (
+        get_resume(selected_thread["resume_id"])
+        if selected_thread and selected_thread.get("resume_id")
+        else None
+    )
+
+    if selected_thread:
+        st.markdown(
+            f"""
+            <div class="memory-context-strip">
+              <span class="memory-context-label">Active chat</span>
+              <div class="pill">{selected_thread_job.get('title') if selected_thread_job else 'No job selected'}</div>
+              <div class="pill">{selected_thread_job.get('company') if selected_thread_job else 'No company selected'}</div>
+              <div class="pill">{selected_thread_job.get('location') if selected_thread_job else 'No location'}</div>
+              <div class="pill">{selected_thread_job.get('source') if selected_thread_job else 'No source'}</div>
+              <div class="pill">{selected_thread_resume.get('filename') if selected_thread_resume else 'No resume selected'}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        empty_cols = st.columns([2, 1, 2])
+        with empty_cols[1]:
+            if st.button("New chat", key="agent_empty_new_chat", type="primary", use_container_width=True):
+                _new_chat_dialog()
+
+    if selected_thread_id is not None:
+        control_cols = st.columns([1, 4])
+        with control_cols[0]:
+            if st.button("Clear thread", key="memory_clear_chat", disabled=selected_thread_id is None):
+                clear_chat_thread(selected_thread_id)
+                touch_chat_thread(selected_thread_id)
+                st.rerun()
+        with control_cols[1]:
+            st.markdown(
+                '<div class="chat-hint">Try: "What companies showed up most?" or "Summarize last session."</div>',
+                unsafe_allow_html=True,
+            )
 
     def _handle_memory_submit():
         prompt = st.session_state.get("memory_input", "").strip()
@@ -404,67 +1030,64 @@ with tab_memory:
 
     pending = st.session_state.pop("_memory_pending", None)
     if pending:
-        existing_len = len(st.session_state["memory_messages"])
-        st.session_state["memory_messages"].append({"role": "user", "content": pending})
-        st.session_state["memory_messages"].append(
-            {"role": "assistant", "content": "_Thinking…_"}
-        )
+        if selected_thread_id is None:
+            st.warning("Start a new contextual chat by selecting a resume and a matched job first.")
+            st.stop()
 
-        graph = build_graph()
-        lc_messages = []
-        for msg in st.session_state["memory_messages"]:
-            if msg["role"] == "user":
-                lc_messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "assistant":
-                if msg["content"] != "_Thinking…_":
-                    lc_messages.append(AIMessage(content=msg["content"]))
-
-        with st.spinner("Running tools..."):
-            result = graph.invoke({"messages": lc_messages})
-        new_messages = result["messages"][len(lc_messages):]
+        add_chat_message(selected_thread_id, "user", pending)
+        existing_messages = get_chat_messages(selected_thread_id)
+        thread = get_chat_thread(selected_thread_id)
+        thread_job = get_job(thread["job_id"]) if thread and thread.get("job_id") else None
+        thread_resume = get_resume(thread["resume_id"]) if thread and thread.get("resume_id") else None
+        thread_context = _build_thread_context(thread_job, thread_resume)
 
         last_assistant = None
-        for msg in new_messages:
-            if msg.type == "tool":
-                st.session_state["memory_messages"].append(
-                    {"role": "tool", "content": msg.content}
-                )
-                if show_tool_debug:
-                    with st.chat_message("tool"):
-                        st.markdown(msg.content)
-            elif msg.type in ("assistant", "ai"):
-                last_assistant = msg.content
+        if memory_setup_error:
+            last_assistant = f"Agent unavailable: {memory_setup_error}"
+        else:
+            try:
+                graph = build_graph(thread_context=thread_context)
+                lc_messages = []
+                for msg in existing_messages:
+                    if msg["role"] == "user":
+                        lc_messages.append(HumanMessage(content=msg["content"]))
+                    elif msg["role"] == "assistant":
+                        lc_messages.append(AIMessage(content=msg["content"]))
+
+                with st.spinner("Running tools..."):
+                    result = graph.invoke({"messages": lc_messages})
+                new_messages = result["messages"][len(lc_messages):]
+
+                for msg in new_messages:
+                    if msg.type == "tool":
+                        add_chat_message(selected_thread_id, "tool", msg.content)
+                        if show_tool_debug:
+                            with st.chat_message("tool"):
+                                st.markdown(msg.content)
+                    elif msg.type in ("assistant", "ai"):
+                        last_assistant = msg.content
+            except Exception as exc:
+                last_assistant = f"Agent unavailable: {exc}"
 
         if last_assistant:
-            st.session_state["memory_messages"] = [
-                m for m in st.session_state["memory_messages"] if m["content"] != "_Thinking…_"
-            ]
-            st.session_state["memory_messages"].append(
-                {"role": "assistant", "content": last_assistant}
-            )
+            add_chat_message(selected_thread_id, "assistant", last_assistant)
+            st.rerun()
 
-    st.markdown('<div class="chat-shell" id="chat-shell">', unsafe_allow_html=True)
-    for msg in st.session_state["memory_messages"]:
-        if msg["role"] == "tool" and not show_tool_debug:
-            continue
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-    st.markdown("</div>", unsafe_allow_html=True)
+    if selected_thread_id is not None:
+        chat_container = st.container(border=False)
+        with chat_container:
+            st.markdown('<div class="agent-chat-shell">', unsafe_allow_html=True)
+            for msg in get_chat_messages(selected_thread_id):
+                if msg["role"] == "tool" and not show_tool_debug:
+                    continue
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    st.chat_input(
-        "Ask a question about your job search history…",
-        key="memory_input",
-        on_submit=_handle_memory_submit,
-    )
-
-    st.markdown(
-        """
-        <script>
-        const shell = parent.document.querySelector('#chat-shell');
-        if (shell) { shell.scrollTop = shell.scrollHeight; }
-        </script>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.chat_input(
+            "Ask about this selected job and resume...",
+            key="memory_input",
+            on_submit=_handle_memory_submit,
+        )
 
 st.caption("Notes: All data is local SQLite. No resume leaves your machine.")

@@ -1,0 +1,2 @@
+In the Applications tab.
+I want to keep track of all the applications i am applying to. I want agent to have all the access to all the tools to manage the application tracker. Even the user can talk with the agent to change the status about the application, and the tracking should be maintained in the database as well.

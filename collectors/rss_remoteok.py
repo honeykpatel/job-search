@@ -2,6 +2,7 @@ import feedparser
 
 REMOTEOK_RSS = "https://remoteok.com/remote-jobs.rss"
 
+
 def search_remoteok(job_title: str, k: int = 5):
     feed = feedparser.parse(REMOTEOK_RSS)
     results = []
@@ -17,7 +18,15 @@ def search_remoteok(job_title: str, k: int = 5):
             continue
 
         results.append(
-            {"title": title, "company": None, "location": "Remote", "url": link, "source": "RemoteOK"}
+            {
+                "title": title,
+                "company": None,
+                "location": "Remote",
+                "url": link,
+                "source": "RemoteOK",
+                "description": summary,
+                "search_query": job_title.strip(),
+            }
         )
         if len(results) >= k:
             break

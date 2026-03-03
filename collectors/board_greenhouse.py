@@ -35,6 +35,8 @@ def search_greenhouse(board: str, job_title: str, k: int = 5):
                 "location": loc,
                 "url": j.get("absolute_url"),
                 "source": f"Greenhouse:{slug}",
+                "description": j.get("content"),
+                "search_query": job_title.strip(),
             }
         )
         if len(out) >= k:

@@ -37,6 +37,12 @@ def search_ashby(board: str, job_title: str, k: int = 5):
                 "location": loc,
                 "url": j.get("jobUrl"),
                 "source": f"Ashby:{slug}",
+                "description": (
+                    j.get("descriptionPlain")
+                    or j.get("description")
+                    or j.get("descriptionHtml")
+                ),
+                "search_query": job_title.strip(),
             }
         )
         if len(out) >= k:
