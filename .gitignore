@@ -13,3 +13,6 @@ wheels/
 jobs.db
 practice.py
 .DS_Store
+frontend/node_modules/
+frontend/dist/
+Resume.pdf

@@ -1,0 +1,596 @@
+JOB SEARCH PROJECT CONTEXT
+
+1. Purpose of this file
+- This file is a handoff snapshot for future Codex sessions.
+- Goal: avoid re-explaining project state, recent discussion, current failures, and important caution areas.
+- Scope of this snapshot: what was discussed in this session, what was verified by reading the repo, what is currently broken, and what should be checked next.
+- Maintenance rule:
+  - future Codex sessions should append new discussion, decisions, actions, removals, fixes, failures, and reasons to this file
+  - do not overwrite prior history unless correcting something clearly wrong
+  - treat this file as an ongoing chronological/project memory log
+
+2. What the user asked in this session
+- User first asked for a full-project check to see whether everything works well.
+- User reported frontend proxy failures from Vite:
+  - `/api/threads`
+  - `/api/jobs?query=&limit=20`
+  - `/api/sessions`
+  - `/api/resumes`
+  - `/api/jobs/recent?limit=200`
+  - `/api/profile`
+  - `/api/pipeline-summary`
+- User reported backend startup failure when running:
+  - `python -m uvicorn app.api:app --reload`
+- User then changed the task and asked for a `context.txt` file in the repo containing a compact but detailed point-wise summary of what was discussed and what needs attention.
+
+3. Exact failure observed from user logs
+- Frontend error:
+  - Vite dev server starts at `http://localhost:5173`.
+  - Proxy requests to backend fail with `ECONNREFUSED 127.0.0.1:8000`.
+- Backend error chain:
+  - Uvicorn reloader starts.
+  - Backend import fails before app is served.
+  - Import path:
+    - `app.api`
+    - imports `collectors.rss_remoteok`
+    - that module imports `feedparser`
+  - Actual exception:
+    - `ModuleNotFoundError: No module named 'feedparser'`
+- Meaning:
+  - Frontend proxy is not the root problem.
+  - Frontend cannot connect because backend process dies during import.
+
+4. Root cause confirmed in this session
+- `frontend/vite.config.js` proxies `/api` to `http://127.0.0.1:8000`.
+- That target matches the backend host/port shown in the user logs.
+- Therefore proxy config is not the immediate issue.
+- Immediate blocker is missing Python dependency in the environment used to run Uvicorn.
+- Repo manifests do list `feedparser`, but the active Python installation used by the user did not have it available at runtime.
+- Likely interpretation:
+  - user ran system Python instead of a prepared virtual environment, or
+  - dependencies were not installed in the interpreter currently used for `python -m uvicorn ...`
+
+5. Important repo state discovered
+- Git worktree is already dirty.
+- Existing modified files before this context file was created:
+  - `.env.example`
+  - `Note.ipynb`
+  - `README.md`
+  - `app/app.py`
+  - `memory/graph.py`
+  - `pyproject.toml`
+  - `requirements.txt`
+  - `storage/db.py`
+- Existing untracked files/folders before this context file was created:
+  - `PROJECT_NOTE.md`
+  - `Resume.pdf`
+  - `app/api.py`
+  - `frontend/`
+  - `package-lock.json`
+  - `utils/company_inference.py`
+- Interpretation:
+  - this repo has substantial local work in progress already
+  - future Codex sessions must not assume a clean baseline
+  - future edits should avoid reverting unrelated local changes
+
+6. What was actually done in this session
+- No project code was modified.
+- No dependencies were installed.
+- No tests were run.
+- No server process was fixed or restarted.
+- Only repo inspection was performed.
+- This `context.txt` file was added as requested.
+
+7. Current application architecture verified from repo
+- Project now contains two UI paths plus one API backend:
+  - Legacy Streamlit app: `app/app.py`
+  - FastAPI backend: `app/api.py`
+  - React frontend: `frontend/`
+- README indicates intended dev workflow:
+  - backend: `.venv\Scripts\python.exe -m uvicorn app.api:app --reload`
+  - frontend: `cd frontend` then `npm run dev`
+- FastAPI can also serve built frontend assets from `frontend/dist` if production build exists.
+
+8. Backend structure verified
+- Main backend entrypoint: `app/api.py`
+- Backend responsibilities:
+  - health check
+  - job search aggregation
+  - session CRUD
+  - resume upload/list/delete
+  - TF-IDF matching endpoint
+  - applications tracking
+  - saved profile storage
+  - agent thread/message APIs
+  - serving built frontend assets
+- Job sources imported by backend:
+  - `collectors.rss_remoteok.search_remoteok`
+  - `collectors.api_remotive.search_remotive`
+  - `collectors.board_greenhouse.search_greenhouse`
+  - `collectors.board_ashby.search_ashby`
+- Backend initializes DB at import time via `init_db()`.
+
+9. Frontend structure verified
+- Frontend directory exists and includes Vite + React app.
+- Main frontend app file: `frontend/src/App.jsx`
+- Pages in React app:
+  - Job Search
+  - Resume
+  - Matching
+  - Applications
+  - Profile
+  - Agent
+- Bootstrap behavior in frontend:
+  - immediately loads sessions, resumes, recent jobs, threads, profile, and pipeline summary
+  - creates a general agent thread if one does not exist
+- This explains why frontend emits many `/api/...` requests on load.
+- If backend is down, the frontend will quickly surface multiple proxy errors.
+
+10. Database/storage layer verified
+- SQLite DB path is `jobs.db` in project root.
+- `storage/db.py` enables `PRAGMA foreign_keys = ON`.
+- Tables verified:
+  - `search_sessions`
+  - `job_postings`
+  - `session_jobs`
+  - `resumes`
+  - `applications`
+  - `chat_threads`
+  - `user_profile`
+  - `chat_messages`
+- DB layer includes migrations-by-column-check for some fields using `_ensure_column`.
+- `delete_session()` is aggressive:
+  - deletes linked chat threads
+  - deletes linked applications
+  - deletes session-job links
+  - deletes job postings belonging to the session
+- Future review point:
+  - confirm this deletion behavior is intended when jobs may conceptually belong to multiple sessions
+
+11. Agent/memory layer verified
+- Agent graph is in `memory/graph.py`.
+- Uses:
+  - `ChatOpenAI`
+  - `langgraph`
+  - tool bindings from `memory/tools.py`
+- Two thread types exist:
+  - `general`
+  - `job`
+- General thread:
+  - meant for whole-pipeline strategy
+- Job thread:
+  - meant for one job + one resume context
+- Agent requires `OPENAI_API_KEY`.
+- Web search tool likely depends on Tavily and requires `TAVILY_API_KEY`.
+
+12. Dependency manifests verified
+- `requirements.txt` includes `feedparser`.
+- `pyproject.toml` also includes `feedparser`.
+- `pyproject.toml` currently uses:
+  - `requires-python = ">=3.11"`
+- That is materially different from older project notes that claimed missing dependencies / Python mismatch.
+- Interpretation:
+  - some setup work has already happened in the repo
+  - old documentation may be stale
+
+13. Documentation mismatch found
+- `README.md` is not empty.
+- `README.md` contains detailed project notes and updated React/FastAPI workflow.
+- `PROJECT_NOTE.md` still contains older statements such as:
+  - `README.md` is empty
+  - `pyproject.toml` is missing dependencies
+  - Python version mismatch claims
+- Those statements are now stale compared with actual repo contents.
+- Future Codex sessions should treat `PROJECT_NOTE.md` as historical, not authoritative.
+
+14. Security issue discovered
+- `.env.example` contains what look like real API keys, not placeholders.
+- This is a serious repo hygiene issue.
+- At minimum future work should:
+  - replace actual secrets in `.env.example` with placeholders
+  - rotate any leaked OpenAI and Tavily keys if they were ever real and exposed
+- Important:
+  - do not paste those secrets into chat responses
+  - do not commit exposed secrets again
+
+15. What is currently most likely broken or unverified
+- Broken now:
+  - FastAPI backend startup in the user’s current Python environment
+- Likely broken or unverified until tested:
+  - whether the active interpreter has all Python deps installed
+  - whether `.venv` exists and is the intended runtime
+  - whether `memory/tools.py` imports cleanly in current environment
+  - whether API routes that depend on external services behave gracefully
+  - whether React frontend fully works once backend boots
+  - whether file upload / resume parsing works in practice
+  - whether agent chat works end-to-end with available keys
+  - whether delete flows have unintended data-loss side effects
+
+16. Most probable next steps for the next Codex session
+- Step 1: verify Python environment actually used for backend launch
+  - check `python --version`
+  - check whether `.venv` exists
+  - check `pip show feedparser` or equivalent in the same interpreter
+- Step 2: if missing deps, install from intended manifest into the correct environment
+  - likely `requirements.txt` or `pyproject.toml`
+- Step 3: start backend again and capture the next failure, if any
+  - there may be additional missing packages after `feedparser`
+- Step 4: once backend boots, verify these endpoints first:
+  - `/api/health`
+  - `/api/sessions`
+  - `/api/jobs/recent?limit=20`
+  - `/api/profile`
+  - `/api/pipeline-summary`
+- Step 5: run frontend and confirm initial bootstrap succeeds without proxy errors
+- Step 6: review `.env.example` and remove real secrets
+
+17. High-signal conclusions from this session
+- Frontend proxy errors are secondary symptoms, not the root cause.
+- Root cause from current evidence is backend import failure due to missing `feedparser` in the active Python runtime.
+- Repo has evolved beyond older notes; current source code and manifests are more trustworthy than `PROJECT_NOTE.md`.
+- There is already a large amount of local uncommitted work; future changes should be surgical.
+- Secret handling in `.env.example` needs cleanup.
+
+18. Files that were most relevant in this session
+- `app/api.py`
+- `app/app.py`
+- `storage/db.py`
+- `memory/graph.py`
+- `frontend/src/App.jsx`
+- `frontend/vite.config.js`
+- `frontend/package.json`
+- `requirements.txt`
+- `pyproject.toml`
+- `README.md`
+- `PROJECT_NOTE.md`
+- `.env.example`
+
+19. Session-end status
+- Requested deliverable created:
+  - `context.txt`
+- Project was inspected but not repaired.
+- Backend/frontend are still not confirmed working at end of this session.
+
+20. Future update policy
+- Every meaningful future session should append:
+  - what the user asked
+  - what was discussed
+  - what was changed
+  - what was removed
+  - why those actions were taken
+  - what was verified
+  - what remains broken, risky, or pending
+- Prefer adding a new dated section instead of rewriting old sections.
+
+21. Naming convention from user
+- In this project, use these terms consistently:
+  - `Agent` = the deep agent / general agent
+  - `Helper` = subagents / job-specific focused agents
+- Future Codex sessions should follow this naming in discussion, UI suggestions, code comments, and handoff updates unless the user changes it again.
+
+22. Current tool access by agent type
+- Source of truth for this section:
+  - `memory/graph.py`
+  - `memory/tools.py`
+
+- `Agent` tools currently exposed:
+  - `list_recent_sessions`
+  - `get_session_jobs`
+  - `list_jobs`
+  - `search_jobs`
+  - `get_job_details`
+  - `top_companies`
+  - `list_resumes`
+  - `get_resume_details`
+  - `rank_jobs_for_resume`
+  - `list_applications`
+  - `get_application`
+  - `save_application`
+  - `web_search_jobs`
+
+- `Helper` tools currently exposed:
+  - `get_current_job`
+  - `get_current_resume`
+  - `get_current_application`
+  - `update_current_application`
+  - `web_search_jobs`
+
+- Tool-scope distinction:
+  - `Agent` has broad access across saved sessions, jobs, resumes, applications, and rankings.
+  - `Helper` is intentionally scoped to the job, resume, and application attached to its own thread.
+  - both `Agent` and `Helper` can use `web_search_jobs`, but only when the user explicitly asks to find new jobs online.
+
+23. Helper-management tools added for Agent only
+- User requested that `Agent` be able to create, rename, and delete `Helper` threads.
+- User explicitly requested that `Helper` threads must not get these management tools.
+- Implemented in this session:
+  - added `list_helpers`
+  - added `create_helper`
+  - added `rename_helper`
+  - added `delete_helper`
+- These tools were added to `Agent` only in `memory/graph.py`.
+- These tools were not added to `Helper`.
+- Safety behavior:
+  - rename/delete logic checks that the target thread is a `job` thread
+  - general `Agent` thread cannot be renamed/deleted through these Helper tools
+- Supporting code updated:
+  - `memory/tools.py`
+  - `memory/graph.py`
+- Verification performed:
+  - `python -m py_compile memory\tools.py memory\graph.py storage\db.py`
+  - compile check passed
+
+24. Helper creation flow improved for natural-language job references
+- Problem observed:
+  - Agent previously tried to create a Helper using a human-readable job string as if it were a `job_id`
+  - example failure:
+    - `Unknown job_id: Sr Director Data Engineering & Analytics @ Arcadia`
+- User requirement:
+  - Agent should be able to use job details already stored in the database
+  - creating a Helper needs two fields:
+    - job
+    - resume
+  - if the user only gives the job title/company, Agent should ask the user to choose from saved resumes in the database
+- Implemented behavior:
+  - `create_helper` now accepts:
+    - `job_id`
+    - `resume_id`
+    - `title`
+    - `job_reference`
+  - if `job_id` is not provided, the tool can resolve candidates from `job_reference`
+  - if multiple jobs match, the tool returns candidate jobs so Agent can ask the user to choose
+  - if no `resume_id` is provided, the tool returns saved resume options so Agent can ask the user to choose
+  - Agent prompt was updated to explicitly:
+    - not guess ids from free text
+    - resolve jobs from the database first
+    - ask the user to select a resume if missing
+- Supporting files updated:
+  - `memory/tools.py`
+  - `memory/graph.py`
+- Verification performed:
+  - `python -m py_compile memory\tools.py memory\graph.py`
+  - compile check passed
+
+25. Multi-turn Helper creation continuity bug fixed
+- User reported a real conversational failure:
+  - Agent listed recent saved jobs including `Sr Director Data Engineering & Analytics @ Arcadia (Remote)`
+  - user replied `1`
+  - Agent still behaved as if the job was not saved
+  - then on `yes` it failed with:
+    - `Agent unavailable: Unknown job_id: Sr Director Data Engineering & Analytics @ Arcadia`
+- Root cause discovered:
+  - previous tool outputs were being stored in chat history as role=`tool`
+  - but on the next turn, chat reconstruction only reloaded `user` and `assistant` messages
+  - tool outputs were not fed back into the model
+  - result: Agent forgot the candidate/job-selection context between turns
+- Fix implemented:
+  - in `app/api.py`, previous stored tool messages are now re-injected as `SystemMessage` items for continuity
+  - in `app/app.py`, the same continuity fix was applied for the legacy Streamlit path
+  - in `memory/tools.py`, `create_helper` now treats an unknown `job_id` as a possible free-text job reference fallback before giving up
+- Expected result after fix:
+  - Agent should better preserve prior tool-produced candidate lists and resume options across follow-up turns
+  - if Agent still sends human-readable text in `job_id`, the tool now has a fallback path to resolve it against saved jobs
+- Supporting files updated:
+  - `app/api.py`
+  - `app/app.py`
+  - `memory/tools.py`
+- Verification performed:
+  - `python -m py_compile app\api.py app\app.py memory\tools.py memory\graph.py`
+  - compile check passed
+
+26. Chat UI markdown rendering improved in React frontend
+- User reported that chat responses arrive in markdown format but were being shown as plain text in the frontend, so the output looked unformatted.
+- Root cause:
+  - React chat UI in `frontend/src/App.jsx` rendered `message.content` directly as plain text
+  - markdown syntax was not being parsed/rendered
+- Implemented in this session:
+  - added a small built-in markdown renderer in `frontend/src/App.jsx`
+  - renderer supports the common response shapes used by Agent/Helper:
+    - headings
+    - paragraphs
+    - unordered lists
+    - ordered lists
+    - inline code
+    - fenced code blocks
+    - bold
+    - italics
+    - markdown links
+  - updated chat message rendering to use this markdown component instead of raw text output
+  - added matching styles in `frontend/src/styles.css` for:
+    - headings
+    - list spacing
+    - inline code
+    - code blocks
+    - markdown links
+- Reason for implementation choice:
+  - avoided introducing a new npm dependency just to fix rendering
+  - kept the change local and buildable with the current frontend setup
+- Verification performed:
+  - `npm run build`
+  - initial sandboxed build hit `spawn EPERM`
+  - reran with approval and build passed successfully
+
+27. Agent and Helper now require confirmation before writes/deletes
+- User requirement:
+  - both `Agent` and `Helper` must ask user permission before any write/delete operation
+  - they should show a preview first, then proceed only after explicit confirmation
+- Implemented behavior:
+  - write/delete tools now default to preview mode unless `confirm=true`
+  - preview responses include `needs_confirmation: true` and a preview payload
+  - prompts for both `Agent` and `Helper` were updated to:
+    - show preview first
+    - ask for explicit confirmation
+    - only execute after the user clearly confirms
+- Tools affected:
+  - `save_application`
+  - `create_helper`
+  - `rename_helper`
+  - `delete_helper`
+  - `update_current_application`
+- Preview examples now include:
+  - current vs proposed application changes
+  - Helper create preview with selected job/resume/title
+  - Helper rename preview with current/new title
+  - Helper delete preview with target thread details
+- Supporting files updated:
+  - `memory/tools.py`
+  - `memory/graph.py`
+- Verification performed:
+  - `python -m py_compile memory\tools.py memory\graph.py app\api.py app\app.py`
+  - compile check passed
+
+28. Approval flow moved out of chat into Approve/Reject UI
+- User refinement:
+  - approval/rejection should use buttons
+  - permissions should not appear as chat messages
+  - after approving/rejecting, the permission prompt should not remain in chat history
+- Implemented behavior:
+  - backend now intercepts confirmation-preview tool results before saving them as chat messages
+  - `send_message` returns a structured `pending_action` payload instead of persisting the permission exchange to thread messages
+  - frontend Agent/Helper panel now renders a dedicated approval card with:
+    - preview details
+    - `Approve` button
+    - `Reject` button
+  - approving calls a dedicated backend endpoint:
+    - `POST /api/threads/{thread_id}/actions/approve`
+  - rejecting simply clears the pending action UI without writing anything and without adding chat messages
+- Action execution behavior:
+  - preview tool outputs now include a structured `action` block with:
+    - action type
+    - params required for execution
+  - approve endpoint executes the action directly without routing the confirmation through the LLM chat stream
+- Files updated:
+  - `memory/tools.py`
+  - `memory/graph.py`
+  - `app/api.py`
+  - `frontend/src/App.jsx`
+  - `frontend/src/styles.css`
+- Verification performed:
+  - `python -m py_compile app\api.py memory\tools.py memory\graph.py`
+  - `npm run build`
+  - build passed
+
+29. Partial application updates now preserve unchanged fields
+- User reported a Helper bug:
+  - Helper changed job status from `saved` to `interview` correctly
+  - later, user asked Helper to add a note
+  - note was added, but status was reset back to `saved`
+- Root cause:
+  - tool defaults treated omitted fields as explicit values
+  - `status` defaulted to `saved`
+  - note-only edits therefore generated a preview/write with `status=saved`
+- Fix implemented:
+  - application preview logic now resolves partial updates against the current saved application
+  - if the user only changes notes, existing status/resume are preserved
+  - if the user only changes status, existing notes/resume are preserved
+  - Helper-scoped update path now uses the merged preview values on final write
+  - approval endpoint now applies the resolved preview values rather than fallback defaults
+  - prompts for both `Agent` and `Helper` now explicitly say to preserve unchanged fields for partial tracker edits
+- Files updated:
+  - `memory/tools.py`
+  - `memory/graph.py`
+  - `app/api.py`
+- Verification performed:
+  - `python -m py_compile memory\tools.py memory\graph.py app\api.py`
+  - compile check passed
+
+30. Manual text confirmations still appeared after restart; prompts tightened
+- User reported that even after restarting frontend/backend, one flow still produced a plain chat confirmation like:
+  - preview text
+  - "Do you want to proceed... Please confirm!"
+- Interpretation:
+  - model was sometimes composing its own confirmation text instead of calling the write/delete tool first
+  - this bypassed the structured `pending_action` approval card flow
+- Fix implemented:
+  - tightened both `Agent` and `Helper` prompts in `memory/graph.py`
+  - new rule:
+    - for any write/delete intent, the model must call the relevant tool first to generate the structured preview
+    - it must not write its own free-text confirmation when a tool can generate the preview
+    - after tool preview, it should stop and wait for UI approval flow
+- Verification performed:
+  - `python -m py_compile memory\graph.py`
+  - compile check passed
+
+31. Approval outcomes now appear as small centered timeline markers
+- User requested:
+  - after approve/reject, do not keep the permission prompt in chat
+  - instead show a very small centered text at that execution spot, similar to a WhatsApp group announcement
+- Implemented behavior:
+  - frontend now inserts a local timeline event into the chat stream after approval/rejection
+  - examples:
+    - `Helper creation completed`
+    - `Helper creation cancelled`
+    - `Application update completed`
+    - `Application update cancelled`
+  - these are rendered as centered, compact pill-style markers instead of full chat bubbles
+  - they are local UI timeline events, not persisted permission messages
+- Files updated:
+  - `frontend/src/App.jsx`
+  - `frontend/src/styles.css`
+- Verification performed:
+  - `npm run build`
+  - build passed
+
+32. Timeline markers now anchor after the triggering chat message
+- User reported two issues with the announcement markers:
+  - they appeared only for some Helper flows
+  - they could appear at the top of the chat instead of after the relevant task
+- Root cause for placement issue:
+  - timeline events were being globally merged by timestamp sorting
+  - this could move them out of the expected conversational position
+- Fix implemented:
+  - timeline events are now anchored to the last visible chat message present at the moment of approve/reject
+  - rendering injects the timeline marker immediately after that anchor message
+  - if the anchor message no longer exists, event falls back to the end of the visible chat stream
+  - clearing a thread now also clears local timeline markers for that thread
+- Scope:
+  - applies to approval/rejection flows regardless of whether the pending action came from `Agent` or `Helper`
+- Files updated:
+  - `frontend/src/App.jsx`
+- Verification performed:
+  - `npm run build`
+  - build passed
+
+33. Project organization pass: shared app logic extracted
+- User requested a broader project organization cleanup while keeping current behavior working.
+- Main organization change made in this session:
+  - extracted duplicated backend/Streamlit logic into shared modules under `app/`
+- New shared modules:
+  - `app/conversation.py`
+    - `interleave_jobs`
+    - `thread_title_from_context`
+    - `build_thread_context`
+    - `build_langchain_messages`
+  - `app/pipeline.py`
+    - pipeline summary and application-priority/follow-up logic used by the API
+  - `app/__init__.py`
+    - makes `app/` an explicit Python package
+- Refactors applied:
+  - `app/api.py`
+    - now uses shared conversation helpers instead of carrying duplicate thread/title/history code
+    - now uses shared pipeline summary module instead of carrying pipeline summary logic inline
+  - `app/app.py`
+    - now uses shared conversation helpers instead of duplicating interleave/thread-context/history logic
+    - now uses `get_memory_setup_error` from `memory.graph` instead of maintaining a separate local copy
+- Reason for change:
+  - reduce duplication between FastAPI backend and legacy Streamlit app
+  - make future behavior changes land in one shared place
+  - improve project navigability for future Codex sessions
+- Verification performed:
+  - `python -m py_compile app\__init__.py app\conversation.py app\pipeline.py app\api.py app\app.py memory\graph.py memory\tools.py storage\db.py`
+  - `npm run build`
+  - both checks passed
+
+34. README replaced with current run instructions
+- User asked to add project run instructions to `README.md`.
+- Previous `README.md` contained a mix of useful notes and stale claims that no longer matched the current repo.
+- Implemented:
+  - replaced README with a cleaner, current guide covering:
+    - environment setup
+    - backend run command
+    - frontend run command
+    - production-style frontend build flow
+    - legacy Streamlit run command
+    - brief project structure and purpose
+- File updated:
+  - `README.md`

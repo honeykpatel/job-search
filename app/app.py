@@ -7,6 +7,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
+from app.conversation import (
+    build_langchain_messages,
+    build_thread_context,
+    interleave_jobs,
+    thread_title_from_context,
+)
 from storage.db import init_db, save_session, list_sessions
 from collectors.rss_remoteok import search_remoteok
 from storage.db import delete_session, save_jobs_for_session, get_jobs_for_session
@@ -32,83 +38,26 @@ from storage.db import (
     save_resume,
     search_jobs as db_search_jobs,
     get_latest_resume,
+    get_or_create_general_thread,
+    get_user_profile,
+    save_user_profile,
     touch_chat_thread,
     upsert_application,
 )
 from parsing.resume_text import extract_text
 from matching.tfidf_ranker import rank_jobs
-from memory.graph import build_graph
-from langchain_core.messages import AIMessage, HumanMessage
+from memory.graph import build_graph, get_memory_setup_error
 
 init_db()  # Ensure the database is initialized
-
-
-def _interleave_jobs(job_lists: list[list[dict]], limit: int) -> list[dict]:
-    out: list[dict] = []
-    lists = [list(x) for x in job_lists if x]
-    while lists and len(out) < limit * max(1, len(lists)):
-        next_lists = []
-        for lst in lists:
-            if lst:
-                out.append(lst.pop(0))
-            if lst:
-                next_lists.append(lst)
-        lists = next_lists
-    return out
-
-
-def _get_memory_setup_error() -> str | None:
-    if not os.getenv("OPENAI_API_KEY"):
-        return (
-            "Missing OPENAI_API_KEY. Set it in your environment or in a local .env file "
-            "to enable Agent chat."
-        )
-    return None
-
-
-def _thread_title_from_context(job: dict | None, resume: dict | None) -> str:
-    job_title = (job or {}).get("title") or "Untitled job"
-    company = (job or {}).get("company") or "Unknown company"
-    resume_name = (resume or {}).get("filename") or "No resume"
-    return f"{job_title} @ {company} [{resume_name}]"
-
-
-def _build_thread_context(job: dict | None, resume: dict | None) -> str | None:
-    if not job and not resume:
-        return None
-
-    lines = [
-        "Thread context for this conversation:",
-        "Use this job and resume as the default context unless the user explicitly switches.",
-    ]
-    if job:
-        lines.extend(
-            [
-                f"Job ID: {job.get('id')}",
-                f"Job title: {job.get('title') or 'Unknown'}",
-                f"Company: {job.get('company') or 'Unknown'}",
-                f"Location: {job.get('location') or 'Unknown'}",
-                f"Source: {job.get('source') or 'Unknown'}",
-                f"URL: {job.get('url') or 'Unknown'}",
-                f"Job description: {job.get('description') or 'Unavailable'}",
-                f"Application status: {job.get('application_status') or 'not_tracked'}",
-                f"Application notes: {job.get('application_notes') or ''}",
-            ]
-        )
-    if resume:
-        lines.extend(
-            [
-                f"Resume ID: {resume.get('id')}",
-                f"Resume filename: {resume.get('filename') or 'Unknown'}",
-                f"Resume text: {resume.get('text') or ''}",
-            ]
-        )
-    return "\n".join(lines)
 
 
 def _sidebar_thread_label(thread: dict) -> str:
     title = (thread.get("title") or "Untitled chat").strip()
     return title if len(title) <= 42 else f"{title[:39]}..."
+
+
+def _thread_kind_label(thread: dict) -> str:
+    return "Deep Agent" if thread.get("thread_type") == "general" else "Job Agent"
 
 
 @st.dialog("New Agent Chat")
@@ -171,7 +120,8 @@ def _new_chat_dialog():
 
     if st.button("Open chat", key="dialog_open_chat", type="primary", use_container_width=True):
         thread_id = create_chat_thread(
-            title=_thread_title_from_context(selected_job, selected_resume),
+            title=thread_title_from_context(selected_job, selected_resume),
+            thread_type="job",
             job_id=selected_job["id"],
             resume_id=selected_resume["id"],
         )
@@ -485,14 +435,33 @@ with st.sidebar:
     if active_page == "Agent":
         with chats_sidebar:
             st.divider()
-            st.subheader("Chats")
+            st.subheader("Agents")
             selected_thread_id = st.session_state["selected_thread_id"]
-            if st.button("New chat", key="sidebar_new_chat", use_container_width=True, type="primary"):
+            if st.button("Open Deep Agent", key="sidebar_general_chat", use_container_width=True, type="primary"):
+                st.session_state["selected_thread_id"] = get_or_create_general_thread()
+                st.rerun()
+            if st.button("New Job Agent", key="sidebar_new_chat", use_container_width=True):
                 _new_chat_dialog()
             threads = list_chat_threads(100)
             if not threads:
                 st.caption("No chats yet.")
-            for thread in threads:
+            general_threads = [t for t in threads if t.get("thread_type") == "general"]
+            job_threads = [t for t in threads if t.get("thread_type") != "general"]
+            if general_threads:
+                st.caption("Deep Agent")
+            for thread in general_threads:
+                is_active = st.session_state["selected_thread_id"] == thread["id"]
+                if st.button(
+                    _sidebar_thread_label(thread),
+                    key=f"thread_nav_{thread['id']}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                ):
+                    st.session_state["selected_thread_id"] = thread["id"]
+                    selected_thread_id = thread["id"]
+            if job_threads:
+                st.caption("Job Agents")
+            for thread in job_threads:
                 is_active = st.session_state["selected_thread_id"] == thread["id"]
                 thread_cols = st.columns([5, 1])
                 with thread_cols[0]:
@@ -533,9 +502,14 @@ with st.sidebar:
                         st.session_state["selected_session_id"] = session_id
                 with session_cols[1]:
                     if st.button("x", key=f"session_delete_{session_id}", use_container_width=True):
-                        delete_session(session_id)
+                        deleted = delete_session(session_id)
                         if st.session_state["selected_session_id"] == session_id:
                             st.session_state["selected_session_id"] = None
+                        if (
+                            st.session_state["selected_thread_id"]
+                            in deleted["deleted_thread_ids"]
+                        ):
+                            st.session_state["selected_thread_id"] = None
                         st.rerun()
     elif active_page == "Resume":
         with chats_sidebar:
@@ -664,7 +638,7 @@ if active_page == "Job Search":
                 if ashby_board.strip()
                 else []
             )
-            jobs = _interleave_jobs(
+            jobs = interleave_jobs(
                 [jobs_remoteok, jobs_remotive, jobs_greenhouse, jobs_ashby], int(k)
             )
             if greenhouse_board.strip():
@@ -970,20 +944,14 @@ if active_page == "Applications":
             )
 
 if active_page == "Agent":
-    st.markdown(
-        """
-        <div class="agent-header">
-          <div class="agent-header-title">Agent</div>
-          <p class="agent-header-copy">Focused chat for the selected job and resume.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    memory_setup_error = _get_memory_setup_error()
+    memory_setup_error = get_memory_setup_error()
     if memory_setup_error:
         st.warning(memory_setup_error)
 
     selected_thread = get_chat_thread(selected_thread_id) if selected_thread_id else None
+    selected_thread_type = (
+        selected_thread.get("thread_type", "job") if selected_thread else None
+    )
     selected_thread_job = (
         get_job(selected_thread["job_id"])
         if selected_thread and selected_thread.get("job_id")
@@ -994,25 +962,71 @@ if active_page == "Agent":
         if selected_thread and selected_thread.get("resume_id")
         else None
     )
+    user_profile = get_user_profile()
+
+    agent_title = _thread_kind_label(selected_thread) if selected_thread else "Agent"
+    agent_copy = (
+        "General strategy chat with your saved profile as default context."
+        if selected_thread_type == "general"
+        else "Focused subagent chat for one job and resume."
+    )
+    st.markdown(
+        f"""
+        <div class="agent-header">
+          <div class="agent-header-title">{agent_title}</div>
+          <p class="agent-header-copy">{agent_copy}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if selected_thread:
-        st.markdown(
-            f"""
-            <div class="memory-context-strip">
-              <span class="memory-context-label">Active chat</span>
-              <div class="pill">{selected_thread_job.get('title') if selected_thread_job else 'No job selected'}</div>
-              <div class="pill">{selected_thread_job.get('company') if selected_thread_job else 'No company selected'}</div>
-              <div class="pill">{selected_thread_job.get('location') if selected_thread_job else 'No location'}</div>
-              <div class="pill">{selected_thread_job.get('source') if selected_thread_job else 'No source'}</div>
-              <div class="pill">{selected_thread_resume.get('filename') if selected_thread_resume else 'No resume selected'}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        if selected_thread_type == "general":
+            profile_status = "Profile saved" if (user_profile or {}).get("summary_text", "").strip() else "Profile empty"
+            st.markdown(
+                f"""
+                <div class="memory-context-strip">
+                  <span class="memory-context-label">Active agent</span>
+                  <div class="pill">Deep Agent</div>
+                  <div class="pill">{profile_status}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            profile_value = (user_profile or {}).get("summary_text", "")
+            edited_profile = st.text_area(
+                "Deep Agent profile",
+                value=profile_value,
+                height=180,
+                help="Store your background, target roles, strengths, constraints, location preferences, compensation goals, and outreach style.",
+                key="deep_agent_profile_text",
+            )
+            if st.button("Save profile", key="save_deep_agent_profile"):
+                save_user_profile(edited_profile)
+                st.session_state["_flash_success"] = "Deep Agent profile saved."
+                st.rerun()
+        else:
+            st.markdown(
+                f"""
+                <div class="memory-context-strip">
+                  <span class="memory-context-label">Active agent</span>
+                  <div class="pill">Job Agent</div>
+                  <div class="pill">{selected_thread_job.get('title') if selected_thread_job else 'No job selected'}</div>
+                  <div class="pill">{selected_thread_job.get('company') if selected_thread_job else 'No company selected'}</div>
+                  <div class="pill">{selected_thread_job.get('location') if selected_thread_job else 'No location'}</div>
+                  <div class="pill">{selected_thread_job.get('source') if selected_thread_job else 'No source'}</div>
+                  <div class="pill">{selected_thread_resume.get('filename') if selected_thread_resume else 'No resume selected'}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     else:
         empty_cols = st.columns([2, 1, 2])
         with empty_cols[1]:
-            if st.button("New chat", key="agent_empty_new_chat", type="primary", use_container_width=True):
+            if st.button("Open Deep Agent", key="agent_empty_general_chat", type="primary", use_container_width=True):
+                st.session_state["selected_thread_id"] = get_or_create_general_thread()
+                st.rerun()
+            if st.button("New Job Agent", key="agent_empty_new_chat", use_container_width=True):
                 _new_chat_dialog()
 
     if selected_thread_id is not None:
@@ -1023,8 +1037,13 @@ if active_page == "Agent":
                 touch_chat_thread(selected_thread_id)
                 st.rerun()
         with control_cols[1]:
+            hint = (
+                'Try: "Summarize my search strategy" or "What should I prioritize this week?"'
+                if selected_thread_type == "general"
+                else 'Try: "Draft a follow-up for this role" or "What are the gaps against this job?"'
+            )
             st.markdown(
-                '<div class="chat-hint">Try: "What companies showed up most?" or "Summarize last session."</div>',
+                f'<div class="chat-hint">{hint}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1037,28 +1056,37 @@ if active_page == "Agent":
     pending = st.session_state.pop("_memory_pending", None)
     if pending:
         if selected_thread_id is None:
-            st.warning("Start a new contextual chat by selecting a resume and a matched job first.")
+            st.warning("Open Deep Agent or create a Job Agent first.")
             st.stop()
 
         add_chat_message(selected_thread_id, "user", pending)
         existing_messages = get_chat_messages(selected_thread_id)
         thread = get_chat_thread(selected_thread_id)
+        thread_type = thread.get("thread_type", "job") if thread else "job"
         thread_job = get_job(thread["job_id"]) if thread and thread.get("job_id") else None
         thread_resume = get_resume(thread["resume_id"]) if thread and thread.get("resume_id") else None
-        thread_context = _build_thread_context(thread_job, thread_resume)
+        thread_profile = get_user_profile()
+        thread_context = build_thread_context(
+            thread_job,
+            thread_resume,
+            profile=thread_profile,
+            thread_type=thread_type,
+            empty_general_message=(
+                "General profile context is empty. Ask the user to save their background, goals, "
+                "strengths, constraints, and preferences in the Agent profile panel."
+            ),
+        )
 
         last_assistant = None
         if memory_setup_error:
             last_assistant = f"Agent unavailable: {memory_setup_error}"
         else:
             try:
-                graph = build_graph(thread_context=thread_context)
-                lc_messages = []
-                for msg in existing_messages:
-                    if msg["role"] == "user":
-                        lc_messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        lc_messages.append(AIMessage(content=msg["content"]))
+                graph = build_graph(
+                    thread_context=thread_context,
+                    thread_type=thread_type,
+                )
+                lc_messages = build_langchain_messages(existing_messages)
 
                 with st.spinner("Running tools..."):
                     result = graph.invoke({"messages": lc_messages})
@@ -1091,7 +1119,11 @@ if active_page == "Agent":
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.chat_input(
-            "Ask about this selected job and resume...",
+            (
+                "Ask Deep Agent about your overall search..."
+                if selected_thread_type == "general"
+                else "Ask this Job Agent about the selected job and resume..."
+            ),
             key="memory_input",
             on_submit=_handle_memory_submit,
         )

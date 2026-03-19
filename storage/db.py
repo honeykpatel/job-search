@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
+from utils.company_inference import ensure_job_company
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "jobs.db"
@@ -113,6 +114,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS chat_threads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
+                thread_type TEXT NOT NULL DEFAULT 'job',
                 job_id TEXT,
                 resume_id INTEGER,
                 application_id INTEGER,
@@ -121,6 +123,17 @@ def init_db():
                 FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
                 FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL,
                 FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profile (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                summary_text TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -143,6 +156,12 @@ def init_db():
         _ensure_column(conn, "job_postings", "salary_text", "TEXT")
         _ensure_column(conn, "job_postings", "search_query", "TEXT")
         _ensure_column(conn, "job_postings", "updated_at", "TEXT")
+        _ensure_column(
+            conn,
+            "chat_threads",
+            "thread_type",
+            "TEXT NOT NULL DEFAULT 'job'",
+        )
 
         conn.execute(
             """
@@ -150,6 +169,22 @@ def init_db():
             SET updated_at = COALESCE(updated_at, created_at)
             WHERE updated_at IS NULL OR updated_at = ''
             """
+        )
+        conn.execute(
+            """
+            UPDATE chat_threads
+            SET thread_type = 'job'
+            WHERE thread_type IS NULL OR thread_type = ''
+            """
+        )
+        now = _utcnow()
+        conn.execute(
+            """
+            INSERT INTO user_profile (id, summary_text, created_at, updated_at)
+            VALUES (1, '', ?, ?)
+            ON CONFLICT(id) DO NOTHING
+            """,
+            (now, now),
         )
         conn.commit()
 
@@ -172,8 +207,17 @@ def list_sessions(limit: int = 20):
     with get_conn() as conn:
         cur = conn.execute(
             """
-            SELECT id, job_title, location, work_style, k, created_at
-            FROM search_sessions
+            SELECT
+                s.id,
+                s.job_title,
+                s.location,
+                s.work_style,
+                s.k,
+                s.created_at,
+                COUNT(sj.job_id) AS job_count
+            FROM search_sessions s
+            LEFT JOIN session_jobs sj ON sj.session_id = s.id
+            GROUP BY s.id, s.job_title, s.location, s.work_style, s.k, s.created_at
             ORDER BY id DESC
             LIMIT ?
             """,
@@ -184,9 +228,43 @@ def list_sessions(limit: int = 20):
 
 def delete_session(session_id: int):
     with get_conn() as conn:
-        conn.execute("DELETE FROM session_jobs WHERE session_id = ?", (int(session_id),))
+        cur = conn.execute(
+            "SELECT job_id FROM session_jobs WHERE session_id = ?",
+            (int(session_id),),
+        )
+        job_ids = [row[0] for row in cur.fetchall()]
+        deleted_thread_ids: list[int] = []
+
+        if job_ids:
+            placeholders = ", ".join("?" for _ in job_ids)
+            cur = conn.execute(
+                f"SELECT id FROM chat_threads WHERE job_id IN ({placeholders})",
+                job_ids,
+            )
+            deleted_thread_ids = [row[0] for row in cur.fetchall()]
+            conn.execute(
+                f"DELETE FROM chat_threads WHERE job_id IN ({placeholders})",
+                job_ids,
+            )
+            conn.execute(
+                f"DELETE FROM applications WHERE job_id IN ({placeholders})",
+                job_ids,
+            )
+            conn.execute(
+                f"DELETE FROM session_jobs WHERE job_id IN ({placeholders})",
+                job_ids,
+            )
+            conn.execute(
+                f"DELETE FROM job_postings WHERE id IN ({placeholders})",
+                job_ids,
+            )
+
         conn.execute("DELETE FROM search_sessions WHERE id = ?", (int(session_id),))
         conn.commit()
+        return {
+            "deleted_job_ids": job_ids,
+            "deleted_thread_ids": deleted_thread_ids,
+        }
 
 
 def _job_id(job: dict[str, Any]) -> str:
@@ -265,7 +343,7 @@ def save_jobs_for_session(session_id: int, jobs: list[dict]):
 
 
 def _job_row_to_dict(row: tuple) -> dict[str, Any]:
-    return {
+    job = {
         "id": row[0],
         "title": row[1],
         "company": row[2],
@@ -284,6 +362,7 @@ def _job_row_to_dict(row: tuple) -> dict[str, Any]:
         "application_notes": row[15],
         "application_updated_at": row[16],
     }
+    return ensure_job_company(job)
 
 
 def _resume_row_to_dict(row: tuple) -> dict[str, Any]:
@@ -315,15 +394,20 @@ def get_jobs_for_session(session_id: int):
     with get_conn() as conn:
         cur = conn.execute(
             """
-            SELECT jp.title, jp.company, jp.location, jp.url, jp.source
+            SELECT
+                jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
+                jp.description, jp.job_type, jp.salary_text, jp.search_query,
+                jp.created_at, jp.updated_at,
+                a.id, a.status, a.resume_id, a.notes, a.updated_at
             FROM session_jobs sj
             JOIN job_postings jp ON jp.id = sj.job_id
+            LEFT JOIN applications a ON a.job_id = jp.id
             WHERE sj.session_id = ?
             ORDER BY jp.updated_at DESC, jp.created_at DESC
             """,
             (int(session_id),),
         )
-        return cur.fetchall()
+        return [_job_row_to_dict(row) for row in cur.fetchall()]
 
 
 def list_recent_jobs(limit: int = 200):
@@ -575,6 +659,7 @@ def delete_application(job_id: str):
 
 def create_chat_thread(
     title: str = "New chat",
+    thread_type: str = "job",
     job_id: str | None = None,
     resume_id: int | None = None,
     application_id: int | None = None,
@@ -584,11 +669,40 @@ def create_chat_thread(
         cur = conn.execute(
             """
             INSERT INTO chat_threads (
-                title, job_id, resume_id, application_id, created_at, updated_at
+                title, thread_type, job_id, resume_id, application_id, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (title, job_id, resume_id, application_id, now, now),
+            (title, thread_type, job_id, resume_id, application_id, now, now),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_or_create_general_thread(title: str = "Agent"):
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            SELECT id
+            FROM chat_threads
+            WHERE thread_type = 'general'
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+
+        now = _utcnow()
+        cur = conn.execute(
+            """
+            INSERT INTO chat_threads (
+                title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+            )
+            VALUES (?, 'general', NULL, NULL, NULL, ?, ?)
+            """,
+            (title, now, now),
         )
         conn.commit()
         return cur.lastrowid
@@ -620,7 +734,7 @@ def list_chat_threads(limit: int = 50):
     with get_conn() as conn:
         cur = conn.execute(
             """
-            SELECT id, title, job_id, resume_id, application_id, created_at, updated_at
+            SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
             FROM chat_threads
             ORDER BY updated_at DESC, created_at DESC
             LIMIT ?
@@ -632,11 +746,12 @@ def list_chat_threads(limit: int = 50):
             {
                 "id": row[0],
                 "title": row[1],
-                "job_id": row[2],
-                "resume_id": row[3],
-                "application_id": row[4],
-                "created_at": row[5],
-                "updated_at": row[6],
+                "thread_type": row[2],
+                "job_id": row[3],
+                "resume_id": row[4],
+                "application_id": row[5],
+                "created_at": row[6],
+                "updated_at": row[7],
             }
             for row in rows
         ]
@@ -646,7 +761,7 @@ def get_chat_thread(thread_id: int):
     with get_conn() as conn:
         cur = conn.execute(
             """
-            SELECT id, title, job_id, resume_id, application_id, created_at, updated_at
+            SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
             FROM chat_threads
             WHERE id = ?
             LIMIT 1
@@ -659,11 +774,12 @@ def get_chat_thread(thread_id: int):
         return {
             "id": row[0],
             "title": row[1],
-            "job_id": row[2],
-            "resume_id": row[3],
-            "application_id": row[4],
-            "created_at": row[5],
-            "updated_at": row[6],
+            "thread_type": row[2],
+            "job_id": row[3],
+            "resume_id": row[4],
+            "application_id": row[5],
+            "created_at": row[6],
+            "updated_at": row[7],
         }
 
 
@@ -725,3 +841,41 @@ def delete_chat_thread(thread_id: int):
     with get_conn() as conn:
         conn.execute("DELETE FROM chat_threads WHERE id = ?", (int(thread_id),))
         conn.commit()
+
+
+def get_user_profile():
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            SELECT id, summary_text, created_at, updated_at
+            FROM user_profile
+            WHERE id = 1
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "summary_text": row[1],
+            "created_at": row[2],
+            "updated_at": row[3],
+        }
+
+
+def save_user_profile(summary_text: str):
+    now = _utcnow()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_profile (id, summary_text, created_at, updated_at)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                summary_text = excluded.summary_text,
+                updated_at = excluded.updated_at
+            """,
+            (summary_text, now, now),
+        )
+        conn.commit()
+    return get_user_profile()
