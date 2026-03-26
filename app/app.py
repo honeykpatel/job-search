@@ -7,6 +7,20 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
+
+
+def _bootstrap_streamlit_secrets() -> None:
+    """Mirror Streamlit secrets into env vars so the rest of the app can use os.getenv."""
+    for key in ("OPENAI_API_KEY", "TAVILY_API_KEY", "LANGSMITH_API_KEY"):
+        if os.getenv(key):
+            continue
+        value = st.secrets.get(key)
+        if value:
+            os.environ[key] = str(value)
+
+
+_bootstrap_streamlit_secrets()
+
 from storage.db import init_db, save_session, list_sessions
 from collectors.rss_remoteok import search_remoteok
 from storage.db import delete_session, save_jobs_for_session, get_jobs_for_session
@@ -60,7 +74,7 @@ def _interleave_jobs(job_lists: list[list[dict]], limit: int) -> list[dict]:
 def _get_memory_setup_error() -> str | None:
     if not os.getenv("OPENAI_API_KEY"):
         return (
-            "Missing OPENAI_API_KEY. Set it in your environment or in a local .env file "
+            "Missing OPENAI_API_KEY. Add it to Streamlit secrets in cloud or a local .env file "
             "to enable Agent chat."
         )
     return None
