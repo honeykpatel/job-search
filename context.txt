@@ -594,3 +594,101 @@ JOB SEARCH PROJECT CONTEXT
     - brief project structure and purpose
 - File updated:
   - `README.md`
+
+35. Branch `remodeling` created for hosted deployment work
+- User asked to avoid touching `main` directly and requested a new branch first.
+- Created branch:
+  - `remodeling`
+- Purpose of this branch:
+  - prepare the app for a free hosted deployment with a live database
+  - keep production-oriented changes separate from current `main`
+
+36. Storage layer updated to support hosted Postgres
+- User decided to move forward with a free hosted database instead of relying on local SQLite persistence.
+- Chosen direction:
+  - local development keeps working with SQLite by default
+  - hosted deployment uses Postgres via `DATABASE_URL`
+  - intended target database is Supabase Postgres free tier
+- Main implementation:
+  - `storage/db.py` was refactored to use SQLAlchemy engine/connection handling
+  - if `DATABASE_URL` is unset, storage falls back to local SQLite file `jobs.db`
+  - if `DATABASE_URL` is set to a Postgres URL, the same storage API uses Postgres instead
+  - Postgres URL normalization added:
+    - accepts `postgres://...`
+    - accepts `postgresql://...`
+    - internally normalizes to SQLAlchemy psycopg driver form
+- Important behavior preserved:
+  - same function interface for app/api, Streamlit app, memory tools, and pipeline code
+  - same logical tables:
+    - `search_sessions`
+    - `job_postings`
+    - `session_jobs`
+    - `resumes`
+    - `applications`
+    - `chat_threads`
+    - `user_profile`
+    - `chat_messages`
+  - local SQLite still enables foreign keys
+  - deletion behavior for sessions remains aggressive and unchanged in semantics
+
+37. New deployment dependencies added
+- Added Python dependencies for dual-database support:
+  - `SQLAlchemy`
+  - `psycopg[binary]`
+- Files updated:
+  - `requirements.txt`
+  - `pyproject.toml`
+  - `.env.example`
+- New environment variable documented:
+  - `DATABASE_URL`
+
+38. Free hosted deployment path prepared
+- Chosen free hosting shape:
+  - Supabase Postgres for the database
+  - Render free web service for the app
+  - single Dockerized service serving FastAPI + built React frontend
+- Files added:
+  - `Dockerfile`
+  - `.dockerignore`
+  - `render.yaml`
+- Reason for this deployment choice:
+  - avoids free-hosting local-disk persistence problems
+  - keeps app on one public URL
+  - requires less app restructuring than splitting frontend/backend across multiple hosts
+
+39. Verification performed for the new storage path
+- Syntax verification passed:
+  - `python -m py_compile storage\db.py app\api.py app\app.py memory\tools.py memory\graph.py app\conversation.py app\pipeline.py`
+- Runtime checks performed after installing new DB dependencies into `.venv`:
+  - isolated storage smoke test against temporary SQLite URL
+  - backend import check:
+    - `from app.api import app`
+  - delete-session flow smoke test against temporary SQLite URL
+  - frontend production build:
+    - `npm run build`
+- Verification outcome:
+  - storage layer worked for session/job/resume/application/thread/message operations in isolated smoke tests
+  - backend import succeeded
+  - frontend build succeeded
+
+40. Bug found and fixed during verification
+- Smoke test initially failed in `save_resume()`.
+- Root cause:
+  - function parameter named `text` shadowed SQLAlchemy's `text()` helper inside that function
+- Fix:
+  - renamed the local parameter usage so SQL execution call works correctly
+
+41. Current status after remodeling branch changes
+- Branch `remodeling` now contains:
+  - dual SQLite/Postgres storage support
+  - Supabase-ready `DATABASE_URL` configuration
+  - Render deployment files
+  - updated README deployment guidance
+- Not yet completed in this session:
+  - no actual Supabase project was created by Codex
+  - no Render service was created by Codex
+  - no production secrets or live connection strings were configured
+  - no live deployment URL exists yet from this session alone
+- Meaning:
+  - codebase is prepared for live deployment
+  - final external deployment still needs account-level setup and environment variables

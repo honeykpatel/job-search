@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
+import os
 from pathlib import Path
-import sqlite3
 from typing import Any
+
+from sqlalchemy import bindparam, create_engine, event, inspect, text
+from sqlalchemy.engine import Engine, Row
 
 from utils.company_inference import ensure_job_company
 
@@ -12,259 +15,66 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "jobs.db"
 
 
+def _default_database_url() -> str:
+    return f"sqlite:///{DB_PATH.as_posix()}"
+
+
+def _normalize_database_url(url: str | None) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return _default_database_url()
+    if raw.startswith("postgres://"):
+        return "postgresql+psycopg://" + raw[len("postgres://") :]
+    if raw.startswith("postgresql://"):
+        return "postgresql+psycopg://" + raw[len("postgresql://") :]
+    return raw
+
+
+DATABASE_URL = _normalize_database_url(os.getenv("DATABASE_URL"))
+
+
+def _build_engine() -> Engine:
+    engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True)
+
+    if DATABASE_URL.startswith("sqlite"):
+        @event.listens_for(engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.close()
+
+    return engine
+
+
+ENGINE = _build_engine()
+
+
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    return ENGINE.connect()
 
 
 def _utcnow() -> str:
     return datetime.utcnow().isoformat()
 
 
-def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    cur = conn.execute(f"PRAGMA table_info({table})")
-    return any(row[1] == column for row in cur.fetchall())
+def _column_exists(table: str, column: str) -> bool:
+    inspector = inspect(ENGINE)
+    return any(item["name"] == column for item in inspector.get_columns(table))
 
 
-def _ensure_column(
-    conn: sqlite3.Connection, table: str, column: str, definition: str
-) -> None:
-    if not _column_exists(conn, table, column):
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+def _ensure_column(table: str, column: str, definition: str) -> None:
+    if _column_exists(table, column):
+        return
+    with ENGINE.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
 
 
-def init_db():
-    with get_conn() as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS search_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_title TEXT NOT NULL,
-                location TEXT,
-                work_style TEXT,
-                k INTEGER NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS job_postings (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                company TEXT,
-                location TEXT,
-                url TEXT UNIQUE,
-                source TEXT,
-                description TEXT,
-                job_type TEXT,
-                salary_text TEXT,
-                search_query TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS session_jobs (
-                session_id INTEGER,
-                job_id TEXT,
-                PRIMARY KEY (session_id, job_id),
-                FOREIGN KEY (session_id) REFERENCES search_sessions(id) ON DELETE CASCADE,
-                FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS resumes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename TEXT,
-                text TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS applications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id TEXT NOT NULL UNIQUE,
-                resume_id INTEGER,
-                status TEXT NOT NULL DEFAULT 'saved',
-                notes TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE,
-                FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_threads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                thread_type TEXT NOT NULL DEFAULT 'job',
-                job_id TEXT,
-                resume_id INTEGER,
-                application_id INTEGER,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
-                FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL,
-                FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE SET NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_profile (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                summary_text TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                thread_id INTEGER NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
-            )
-            """
-        )
-
-        _ensure_column(conn, "job_postings", "description", "TEXT")
-        _ensure_column(conn, "job_postings", "job_type", "TEXT")
-        _ensure_column(conn, "job_postings", "salary_text", "TEXT")
-        _ensure_column(conn, "job_postings", "search_query", "TEXT")
-        _ensure_column(conn, "job_postings", "updated_at", "TEXT")
-        _ensure_column(
-            conn,
-            "chat_threads",
-            "thread_type",
-            "TEXT NOT NULL DEFAULT 'job'",
-        )
-
-        conn.execute(
-            """
-            UPDATE job_postings
-            SET updated_at = COALESCE(updated_at, created_at)
-            WHERE updated_at IS NULL OR updated_at = ''
-            """
-        )
-        conn.execute(
-            """
-            UPDATE chat_threads
-            SET thread_type = 'job'
-            WHERE thread_type IS NULL OR thread_type = ''
-            """
-        )
-        now = _utcnow()
-        conn.execute(
-            """
-            INSERT INTO user_profile (id, summary_text, created_at, updated_at)
-            VALUES (1, '', ?, ?)
-            ON CONFLICT(id) DO NOTHING
-            """,
-            (now, now),
-        )
-        conn.commit()
+def _fetchall_tuples(result) -> list[tuple]:
+    return [tuple(row) for row in result.fetchall()]
 
 
-def save_session(job_title: str, location: str, work_style: str, k: int) -> int:
-    created_at = _utcnow()
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO search_sessions (job_title, location, work_style, k, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (job_title, location, work_style, k, created_at),
-        )
-        conn.commit()
-        return cur.lastrowid
-
-
-def list_sessions(limit: int = 20):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT
-                s.id,
-                s.job_title,
-                s.location,
-                s.work_style,
-                s.k,
-                s.created_at,
-                COUNT(sj.job_id) AS job_count
-            FROM search_sessions s
-            LEFT JOIN session_jobs sj ON sj.session_id = s.id
-            GROUP BY s.id, s.job_title, s.location, s.work_style, s.k, s.created_at
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        )
-        return cur.fetchall()
-
-
-def delete_session(session_id: int):
-    with get_conn() as conn:
-        cur = conn.execute(
-            "SELECT job_id FROM session_jobs WHERE session_id = ?",
-            (int(session_id),),
-        )
-        job_ids = [row[0] for row in cur.fetchall()]
-        deleted_thread_ids: list[int] = []
-
-        if job_ids:
-            placeholders = ", ".join("?" for _ in job_ids)
-            cur = conn.execute(
-                f"SELECT id FROM chat_threads WHERE job_id IN ({placeholders})",
-                job_ids,
-            )
-            deleted_thread_ids = [row[0] for row in cur.fetchall()]
-            conn.execute(
-                f"DELETE FROM chat_threads WHERE job_id IN ({placeholders})",
-                job_ids,
-            )
-            conn.execute(
-                f"DELETE FROM applications WHERE job_id IN ({placeholders})",
-                job_ids,
-            )
-            conn.execute(
-                f"DELETE FROM session_jobs WHERE job_id IN ({placeholders})",
-                job_ids,
-            )
-            conn.execute(
-                f"DELETE FROM job_postings WHERE id IN ({placeholders})",
-                job_ids,
-            )
-
-        conn.execute("DELETE FROM search_sessions WHERE id = ?", (int(session_id),))
-        conn.commit()
-        return {
-            "deleted_job_ids": job_ids,
-            "deleted_thread_ids": deleted_thread_ids,
-        }
+def _row_to_tuple(row: Row[Any] | None) -> tuple | None:
+    return tuple(row) if row is not None else None
 
 
 def _job_id(job: dict[str, Any]) -> str:
@@ -294,52 +104,6 @@ def _normalize_job(job: dict[str, Any]) -> dict[str, Any]:
         "salary_text": job.get("salary_text"),
         "search_query": job.get("search_query"),
     }
-
-
-def save_jobs_for_session(session_id: int, jobs: list[dict]):
-    now = _utcnow()
-    with get_conn() as conn:
-        for raw_job in jobs:
-            job = _normalize_job(raw_job)
-            conn.execute(
-                """
-                INSERT INTO job_postings (
-                    id, title, company, location, url, source, description,
-                    job_type, salary_text, search_query, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = COALESCE(excluded.title, job_postings.title),
-                    company = COALESCE(excluded.company, job_postings.company),
-                    location = COALESCE(excluded.location, job_postings.location),
-                    url = COALESCE(excluded.url, job_postings.url),
-                    source = COALESCE(excluded.source, job_postings.source),
-                    description = COALESCE(excluded.description, job_postings.description),
-                    job_type = COALESCE(excluded.job_type, job_postings.job_type),
-                    salary_text = COALESCE(excluded.salary_text, job_postings.salary_text),
-                    search_query = COALESCE(excluded.search_query, job_postings.search_query),
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    job["id"],
-                    job["title"],
-                    job["company"],
-                    job["location"],
-                    job["url"],
-                    job["source"],
-                    job["description"],
-                    job["job_type"],
-                    job["salary_text"],
-                    job["search_query"],
-                    now,
-                    now,
-                ),
-            )
-            conn.execute(
-                "INSERT OR IGNORE INTO session_jobs (session_id, job_id) VALUES (?, ?)",
-                (int(session_id), job["id"]),
-            )
-        conn.commit()
 
 
 def _job_row_to_dict(row: tuple) -> dict[str, Any]:
@@ -390,174 +154,617 @@ def _application_row_to_dict(row: tuple) -> dict[str, Any]:
     }
 
 
-def get_jobs_for_session(session_id: int):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT
-                jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
-                jp.description, jp.job_type, jp.salary_text, jp.search_query,
-                jp.created_at, jp.updated_at,
-                a.id, a.status, a.resume_id, a.notes, a.updated_at
-            FROM session_jobs sj
-            JOIN job_postings jp ON jp.id = sj.job_id
-            LEFT JOIN applications a ON a.job_id = jp.id
-            WHERE sj.session_id = ?
-            ORDER BY jp.updated_at DESC, jp.created_at DESC
-            """,
-            (int(session_id),),
+def init_db():
+    with ENGINE.begin() as conn:
+        if DATABASE_URL.startswith("sqlite"):
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS search_sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_title TEXT NOT NULL,
+                        location TEXT,
+                        work_style TEXT,
+                        k INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS job_postings (
+                        id TEXT PRIMARY KEY,
+                        title TEXT,
+                        company TEXT,
+                        location TEXT,
+                        url TEXT UNIQUE,
+                        source TEXT,
+                        description TEXT,
+                        job_type TEXT,
+                        salary_text TEXT,
+                        search_query TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS session_jobs (
+                        session_id INTEGER,
+                        job_id TEXT,
+                        PRIMARY KEY (session_id, job_id),
+                        FOREIGN KEY (session_id) REFERENCES search_sessions(id) ON DELETE CASCADE,
+                        FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS resumes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        filename TEXT,
+                        text TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS applications (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_id TEXT NOT NULL UNIQUE,
+                        resume_id INTEGER,
+                        status TEXT NOT NULL DEFAULT 'saved',
+                        notes TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE,
+                        FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_threads (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        thread_type TEXT NOT NULL DEFAULT 'job',
+                        job_id TEXT,
+                        resume_id INTEGER,
+                        application_id INTEGER,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
+                        FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL,
+                        FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_profile (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        summary_text TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        thread_id INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS search_sessions (
+                        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        job_title TEXT NOT NULL,
+                        location TEXT,
+                        work_style TEXT,
+                        k INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS job_postings (
+                        id TEXT PRIMARY KEY,
+                        title TEXT,
+                        company TEXT,
+                        location TEXT,
+                        url TEXT UNIQUE,
+                        source TEXT,
+                        description TEXT,
+                        job_type TEXT,
+                        salary_text TEXT,
+                        search_query TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS session_jobs (
+                        session_id INTEGER,
+                        job_id TEXT,
+                        PRIMARY KEY (session_id, job_id),
+                        FOREIGN KEY (session_id) REFERENCES search_sessions(id) ON DELETE CASCADE,
+                        FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS resumes (
+                        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        filename TEXT,
+                        text TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS applications (
+                        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        job_id TEXT NOT NULL UNIQUE,
+                        resume_id INTEGER,
+                        status TEXT NOT NULL DEFAULT 'saved',
+                        notes TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE,
+                        FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_threads (
+                        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        thread_type TEXT NOT NULL DEFAULT 'job',
+                        job_id TEXT,
+                        resume_id INTEGER,
+                        application_id INTEGER,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
+                        FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL,
+                        FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_profile (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        summary_text TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        thread_id INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+
+    _ensure_column("job_postings", "description", "TEXT")
+    _ensure_column("job_postings", "job_type", "TEXT")
+    _ensure_column("job_postings", "salary_text", "TEXT")
+    _ensure_column("job_postings", "search_query", "TEXT")
+    _ensure_column("job_postings", "updated_at", "TEXT")
+    _ensure_column("chat_threads", "thread_type", "TEXT NOT NULL DEFAULT 'job'")
+
+    now = _utcnow()
+    with ENGINE.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE job_postings
+                SET updated_at = COALESCE(updated_at, created_at)
+                WHERE updated_at IS NULL OR updated_at = ''
+                """
+            )
         )
-        return [_job_row_to_dict(row) for row in cur.fetchall()]
+        conn.execute(
+            text(
+                """
+                UPDATE chat_threads
+                SET thread_type = 'job'
+                WHERE thread_type IS NULL OR thread_type = ''
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO user_profile (id, summary_text, created_at, updated_at)
+                VALUES (1, '', :created_at, :updated_at)
+                ON CONFLICT(id) DO NOTHING
+                """
+            ),
+            {"created_at": now, "updated_at": now},
+        )
+
+
+def save_session(job_title: str, location: str, work_style: str, k: int) -> int:
+    created_at = _utcnow()
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                INSERT INTO search_sessions (job_title, location, work_style, k, created_at)
+                VALUES (:job_title, :location, :work_style, :k, :created_at)
+                RETURNING id
+                """
+            ),
+            {
+                "job_title": job_title,
+                "location": location,
+                "work_style": work_style,
+                "k": k,
+                "created_at": created_at,
+            },
+        )
+        return int(result.scalar_one())
+
+
+def list_sessions(limit: int = 20):
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT
+                    s.id,
+                    s.job_title,
+                    s.location,
+                    s.work_style,
+                    s.k,
+                    s.created_at,
+                    COUNT(sj.job_id) AS job_count
+                FROM search_sessions s
+                LEFT JOIN session_jobs sj ON sj.session_id = s.id
+                GROUP BY s.id, s.job_title, s.location, s.work_style, s.k, s.created_at
+                ORDER BY s.id DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": int(limit)},
+        )
+        return _fetchall_tuples(result)
+
+
+def delete_session(session_id: int):
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text("SELECT job_id FROM session_jobs WHERE session_id = :session_id"),
+            {"session_id": int(session_id)},
+        )
+        job_ids = [row[0] for row in result.fetchall()]
+        deleted_thread_ids: list[int] = []
+
+        if job_ids:
+            select_threads = text(
+                "SELECT id FROM chat_threads WHERE job_id IN :job_ids"
+            ).bindparams(bindparam("job_ids", expanding=True))
+            delete_threads = text(
+                "DELETE FROM chat_threads WHERE job_id IN :job_ids"
+            ).bindparams(bindparam("job_ids", expanding=True))
+            delete_applications = text(
+                "DELETE FROM applications WHERE job_id IN :job_ids"
+            ).bindparams(bindparam("job_ids", expanding=True))
+            delete_session_jobs = text(
+                "DELETE FROM session_jobs WHERE job_id IN :job_ids"
+            ).bindparams(bindparam("job_ids", expanding=True))
+            delete_jobs = text(
+                "DELETE FROM job_postings WHERE id IN :job_ids"
+            ).bindparams(bindparam("job_ids", expanding=True))
+
+            deleted_thread_ids = [
+                int(row[0]) for row in conn.execute(select_threads, {"job_ids": job_ids}).fetchall()
+            ]
+            conn.execute(delete_threads, {"job_ids": job_ids})
+            conn.execute(delete_applications, {"job_ids": job_ids})
+            conn.execute(delete_session_jobs, {"job_ids": job_ids})
+            conn.execute(delete_jobs, {"job_ids": job_ids})
+
+        conn.execute(
+            text("DELETE FROM search_sessions WHERE id = :session_id"),
+            {"session_id": int(session_id)},
+        )
+        return {
+            "deleted_job_ids": job_ids,
+            "deleted_thread_ids": deleted_thread_ids,
+        }
+
+
+def save_jobs_for_session(session_id: int, jobs: list[dict]):
+    now = _utcnow()
+    with ENGINE.begin() as conn:
+        for raw_job in jobs:
+            job = _normalize_job(raw_job)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO job_postings (
+                        id, title, company, location, url, source, description,
+                        job_type, salary_text, search_query, created_at, updated_at
+                    )
+                    VALUES (
+                        :id, :title, :company, :location, :url, :source, :description,
+                        :job_type, :salary_text, :search_query, :created_at, :updated_at
+                    )
+                    ON CONFLICT(id) DO UPDATE SET
+                        title = COALESCE(excluded.title, job_postings.title),
+                        company = COALESCE(excluded.company, job_postings.company),
+                        location = COALESCE(excluded.location, job_postings.location),
+                        url = COALESCE(excluded.url, job_postings.url),
+                        source = COALESCE(excluded.source, job_postings.source),
+                        description = COALESCE(excluded.description, job_postings.description),
+                        job_type = COALESCE(excluded.job_type, job_postings.job_type),
+                        salary_text = COALESCE(excluded.salary_text, job_postings.salary_text),
+                        search_query = COALESCE(excluded.search_query, job_postings.search_query),
+                        updated_at = excluded.updated_at
+                    """
+                ),
+                {
+                    **job,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO session_jobs (session_id, job_id)
+                    VALUES (:session_id, :job_id)
+                    ON CONFLICT(session_id, job_id) DO NOTHING
+                    """
+                ),
+                {"session_id": int(session_id), "job_id": job["id"]},
+            )
+
+
+def get_jobs_for_session(session_id: int):
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT
+                    jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
+                    jp.description, jp.job_type, jp.salary_text, jp.search_query,
+                    jp.created_at, jp.updated_at,
+                    a.id, a.status, a.resume_id, a.notes, a.updated_at
+                FROM session_jobs sj
+                JOIN job_postings jp ON jp.id = sj.job_id
+                LEFT JOIN applications a ON a.job_id = jp.id
+                WHERE sj.session_id = :session_id
+                ORDER BY jp.updated_at DESC, jp.created_at DESC
+                """
+            ),
+            {"session_id": int(session_id)},
+        )
+        return [_job_row_to_dict(tuple(row)) for row in result.fetchall()]
 
 
 def list_recent_jobs(limit: int = 200):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT
-                jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
-                jp.description, jp.job_type, jp.salary_text, jp.search_query,
-                jp.created_at, jp.updated_at,
-                a.id, a.status, a.resume_id, a.notes, a.updated_at
-            FROM job_postings jp
-            LEFT JOIN applications a ON a.job_id = jp.id
-            ORDER BY jp.updated_at DESC, jp.created_at DESC
-            LIMIT ?
-            """,
-            (int(limit),),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT
+                    jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
+                    jp.description, jp.job_type, jp.salary_text, jp.search_query,
+                    jp.created_at, jp.updated_at,
+                    a.id, a.status, a.resume_id, a.notes, a.updated_at
+                FROM job_postings jp
+                LEFT JOIN applications a ON a.job_id = jp.id
+                ORDER BY jp.updated_at DESC, jp.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": int(limit)},
         )
-        return [_job_row_to_dict(row) for row in cur.fetchall()]
+        return [_job_row_to_dict(tuple(row)) for row in result.fetchall()]
 
 
 def search_jobs(query: str = "", limit: int = 20, status: str | None = None):
     query_text = query.strip()
-    params: list[Any] = []
+    params: dict[str, Any] = {"limit": int(limit)}
     where: list[str] = []
     if query_text:
-        like = f"%{query_text.lower()}%"
         where.append(
             """
             (
-                lower(COALESCE(jp.title, '')) LIKE ?
-                OR lower(COALESCE(jp.company, '')) LIKE ?
-                OR lower(COALESCE(jp.location, '')) LIKE ?
-                OR lower(COALESCE(jp.source, '')) LIKE ?
-                OR lower(COALESCE(jp.description, '')) LIKE ?
+                lower(COALESCE(jp.title, '')) LIKE :like
+                OR lower(COALESCE(jp.company, '')) LIKE :like
+                OR lower(COALESCE(jp.location, '')) LIKE :like
+                OR lower(COALESCE(jp.source, '')) LIKE :like
+                OR lower(COALESCE(jp.description, '')) LIKE :like
             )
             """
         )
-        params.extend([like, like, like, like, like])
+        params["like"] = f"%{query_text.lower()}%"
     if status:
-        where.append("COALESCE(a.status, 'saved') = ?")
-        params.append(status)
+        where.append("COALESCE(a.status, 'saved') = :status")
+        params["status"] = status
 
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-    params.append(int(limit))
 
-    with get_conn() as conn:
-        cur = conn.execute(
-            f"""
-            SELECT
-                jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
-                jp.description, jp.job_type, jp.salary_text, jp.search_query,
-                jp.created_at, jp.updated_at,
-                a.id, a.status, a.resume_id, a.notes, a.updated_at
-            FROM job_postings jp
-            LEFT JOIN applications a ON a.job_id = jp.id
-            {where_sql}
-            ORDER BY jp.updated_at DESC, jp.created_at DESC
-            LIMIT ?
-            """,
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                f"""
+                SELECT
+                    jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
+                    jp.description, jp.job_type, jp.salary_text, jp.search_query,
+                    jp.created_at, jp.updated_at,
+                    a.id, a.status, a.resume_id, a.notes, a.updated_at
+                FROM job_postings jp
+                LEFT JOIN applications a ON a.job_id = jp.id
+                {where_sql}
+                ORDER BY jp.updated_at DESC, jp.created_at DESC
+                LIMIT :limit
+                """
+            ),
             params,
         )
-        return [_job_row_to_dict(row) for row in cur.fetchall()]
+        return [_job_row_to_dict(tuple(row)) for row in result.fetchall()]
 
 
 def get_job(job_id: str):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT
-                jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
-                jp.description, jp.job_type, jp.salary_text, jp.search_query,
-                jp.created_at, jp.updated_at,
-                a.id, a.status, a.resume_id, a.notes, a.updated_at
-            FROM job_postings jp
-            LEFT JOIN applications a ON a.job_id = jp.id
-            WHERE jp.id = ?
-            LIMIT 1
-            """,
-            (job_id,),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT
+                    jp.id, jp.title, jp.company, jp.location, jp.url, jp.source,
+                    jp.description, jp.job_type, jp.salary_text, jp.search_query,
+                    jp.created_at, jp.updated_at,
+                    a.id, a.status, a.resume_id, a.notes, a.updated_at
+                FROM job_postings jp
+                LEFT JOIN applications a ON a.job_id = jp.id
+                WHERE jp.id = :job_id
+                LIMIT 1
+                """
+            ),
+            {"job_id": job_id},
         )
-        row = cur.fetchone()
-        return _job_row_to_dict(row) if row else None
+        row = result.fetchone()
+        return _job_row_to_dict(tuple(row)) if row else None
 
 
-def save_resume(filename: str, text: str) -> int:
+def save_resume(filename: str, resume_text: str) -> int:
     created_at = _utcnow()
-    with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO resumes (filename, text, created_at) VALUES (?, ?, ?)",
-            (filename, text, created_at),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                INSERT INTO resumes (filename, text, created_at)
+                VALUES (:filename, :text, :created_at)
+                RETURNING id
+                """
+            ),
+            {"filename": filename, "text": resume_text, "created_at": created_at},
         )
-        conn.commit()
-        return cur.lastrowid
+        return int(result.scalar_one())
 
 
 def list_resumes(limit: int = 20):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, filename, text, created_at
-            FROM resumes
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (int(limit),),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, filename, text, created_at
+                FROM resumes
+                ORDER BY id DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": int(limit)},
         )
-        return [_resume_row_to_dict(row) for row in cur.fetchall()]
+        return [_resume_row_to_dict(tuple(row)) for row in result.fetchall()]
 
 
 def delete_resume(resume_id: int):
-    with get_conn() as conn:
+    with ENGINE.begin() as conn:
         conn.execute(
-            "UPDATE applications SET resume_id = NULL WHERE resume_id = ?",
-            (int(resume_id),),
+            text("UPDATE applications SET resume_id = NULL WHERE resume_id = :resume_id"),
+            {"resume_id": int(resume_id)},
         )
         conn.execute(
-            "UPDATE chat_threads SET resume_id = NULL WHERE resume_id = ?",
-            (int(resume_id),),
+            text("UPDATE chat_threads SET resume_id = NULL WHERE resume_id = :resume_id"),
+            {"resume_id": int(resume_id)},
         )
-        conn.execute("DELETE FROM resumes WHERE id = ?", (int(resume_id),))
-        conn.commit()
+        conn.execute(
+            text("DELETE FROM resumes WHERE id = :resume_id"),
+            {"resume_id": int(resume_id)},
+        )
 
 
 def get_resume(resume_id: int):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, filename, text, created_at
-            FROM resumes
-            WHERE id = ?
-            LIMIT 1
-            """,
-            (int(resume_id),),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, filename, text, created_at
+                FROM resumes
+                WHERE id = :resume_id
+                LIMIT 1
+                """
+            ),
+            {"resume_id": int(resume_id)},
         )
-        row = cur.fetchone()
-        return _resume_row_to_dict(row) if row else None
+        row = result.fetchone()
+        return _resume_row_to_dict(tuple(row)) if row else None
 
 
 def get_latest_resume():
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, filename, text, created_at
-            FROM resumes
-            ORDER BY id DESC
-            LIMIT 1
-            """
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, filename, text, created_at
+                FROM resumes
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
         )
-        return cur.fetchone()
+        return _row_to_tuple(result.fetchone())
 
 
 def upsert_application(
@@ -567,94 +774,107 @@ def upsert_application(
     notes: str = "",
 ):
     now = _utcnow()
-    with get_conn() as conn:
-        cur = conn.execute(
-            "SELECT id FROM job_postings WHERE id = ? LIMIT 1",
-            (job_id,),
-        )
-        if cur.fetchone() is None:
+    with ENGINE.begin() as conn:
+        job_exists = conn.execute(
+            text("SELECT id FROM job_postings WHERE id = :job_id LIMIT 1"),
+            {"job_id": job_id},
+        ).fetchone()
+        if job_exists is None:
             raise ValueError(f"Unknown job_id: {job_id}")
 
         if resume_id is not None:
-            cur = conn.execute(
-                "SELECT id FROM resumes WHERE id = ? LIMIT 1",
-                (int(resume_id),),
-            )
-            if cur.fetchone() is None:
+            resume_exists = conn.execute(
+                text("SELECT id FROM resumes WHERE id = :resume_id LIMIT 1"),
+                {"resume_id": int(resume_id)},
+            ).fetchone()
+            if resume_exists is None:
                 raise ValueError(f"Unknown resume_id: {resume_id}")
 
         conn.execute(
-            """
-            INSERT INTO applications (job_id, resume_id, status, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(job_id) DO UPDATE SET
-                resume_id = COALESCE(excluded.resume_id, applications.resume_id),
-                status = excluded.status,
-                notes = CASE
-                    WHEN excluded.notes IS NULL OR excluded.notes = '' THEN applications.notes
-                    ELSE excluded.notes
-                END,
-                updated_at = excluded.updated_at
-            """,
-            (job_id, resume_id, status, notes, now, now),
+            text(
+                """
+                INSERT INTO applications (job_id, resume_id, status, notes, created_at, updated_at)
+                VALUES (:job_id, :resume_id, :status, :notes, :created_at, :updated_at)
+                ON CONFLICT(job_id) DO UPDATE SET
+                    resume_id = COALESCE(excluded.resume_id, applications.resume_id),
+                    status = excluded.status,
+                    notes = CASE
+                        WHEN excluded.notes IS NULL OR excluded.notes = '' THEN applications.notes
+                        ELSE excluded.notes
+                    END,
+                    updated_at = excluded.updated_at
+                """
+            ),
+            {
+                "job_id": job_id,
+                "resume_id": resume_id,
+                "status": status,
+                "notes": notes,
+                "created_at": now,
+                "updated_at": now,
+            },
         )
-        conn.commit()
     return get_application_by_job(job_id)
 
 
 def get_application_by_job(job_id: str):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT
-                a.id, a.job_id, a.resume_id, a.status, a.notes, a.created_at, a.updated_at,
-                jp.title, jp.company, jp.url, r.filename
-            FROM applications a
-            JOIN job_postings jp ON jp.id = a.job_id
-            LEFT JOIN resumes r ON r.id = a.resume_id
-            WHERE a.job_id = ?
-            LIMIT 1
-            """,
-            (job_id,),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT
+                    a.id, a.job_id, a.resume_id, a.status, a.notes, a.created_at, a.updated_at,
+                    jp.title, jp.company, jp.url, r.filename
+                FROM applications a
+                JOIN job_postings jp ON jp.id = a.job_id
+                LEFT JOIN resumes r ON r.id = a.resume_id
+                WHERE a.job_id = :job_id
+                LIMIT 1
+                """
+            ),
+            {"job_id": job_id},
         )
-        row = cur.fetchone()
-        return _application_row_to_dict(row) if row else None
+        row = result.fetchone()
+        return _application_row_to_dict(tuple(row)) if row else None
 
 
 def list_applications(status: str | None = None, limit: int = 50):
-    params: list[Any] = []
+    params: dict[str, Any] = {"limit": int(limit)}
     where_sql = ""
     if status:
-        where_sql = "WHERE a.status = ?"
-        params.append(status)
-    params.append(int(limit))
+        where_sql = "WHERE a.status = :status"
+        params["status"] = status
 
-    with get_conn() as conn:
-        cur = conn.execute(
-            f"""
-            SELECT
-                a.id, a.job_id, a.resume_id, a.status, a.notes, a.created_at, a.updated_at,
-                jp.title, jp.company, jp.url, r.filename
-            FROM applications a
-            JOIN job_postings jp ON jp.id = a.job_id
-            LEFT JOIN resumes r ON r.id = a.resume_id
-            {where_sql}
-            ORDER BY a.updated_at DESC, a.created_at DESC
-            LIMIT ?
-            """,
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                f"""
+                SELECT
+                    a.id, a.job_id, a.resume_id, a.status, a.notes, a.created_at, a.updated_at,
+                    jp.title, jp.company, jp.url, r.filename
+                FROM applications a
+                JOIN job_postings jp ON jp.id = a.job_id
+                LEFT JOIN resumes r ON r.id = a.resume_id
+                {where_sql}
+                ORDER BY a.updated_at DESC, a.created_at DESC
+                LIMIT :limit
+                """
+            ),
             params,
         )
-        return [_application_row_to_dict(row) for row in cur.fetchall()]
+        return [_application_row_to_dict(tuple(row)) for row in result.fetchall()]
 
 
 def delete_application(job_id: str):
-    with get_conn() as conn:
+    with ENGINE.begin() as conn:
         conn.execute(
-            "UPDATE chat_threads SET application_id = NULL WHERE job_id = ?",
-            (job_id,),
+            text("UPDATE chat_threads SET application_id = NULL WHERE job_id = :job_id"),
+            {"job_id": job_id},
         )
-        conn.execute("DELETE FROM applications WHERE job_id = ?", (job_id,))
-        conn.commit()
+        conn.execute(
+            text("DELETE FROM applications WHERE job_id = :job_id"),
+            {"job_id": job_id},
+        )
 
 
 def create_chat_thread(
@@ -665,83 +885,105 @@ def create_chat_thread(
     application_id: int | None = None,
 ):
     now = _utcnow()
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO chat_threads (
-                title, thread_type, job_id, resume_id, application_id, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (title, thread_type, job_id, resume_id, application_id, now, now),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                INSERT INTO chat_threads (
+                    title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+                )
+                VALUES (
+                    :title, :thread_type, :job_id, :resume_id, :application_id, :created_at, :updated_at
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "title": title,
+                "thread_type": thread_type,
+                "job_id": job_id,
+                "resume_id": resume_id,
+                "application_id": application_id,
+                "created_at": now,
+                "updated_at": now,
+            },
         )
-        conn.commit()
-        return cur.lastrowid
+        return int(result.scalar_one())
 
 
 def get_or_create_general_thread(title: str = "Agent"):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id
-            FROM chat_threads
-            WHERE thread_type = 'general'
-            ORDER BY id ASC
-            LIMIT 1
-            """
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id
+                FROM chat_threads
+                WHERE thread_type = 'general'
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            )
         )
-        row = cur.fetchone()
+        row = result.fetchone()
         if row:
-            return row[0]
+            return int(row[0])
 
         now = _utcnow()
-        cur = conn.execute(
-            """
-            INSERT INTO chat_threads (
-                title, thread_type, job_id, resume_id, application_id, created_at, updated_at
-            )
-            VALUES (?, 'general', NULL, NULL, NULL, ?, ?)
-            """,
-            (title, now, now),
+        created = conn.execute(
+            text(
+                """
+                INSERT INTO chat_threads (
+                    title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+                )
+                VALUES (:title, 'general', NULL, NULL, NULL, :created_at, :updated_at)
+                RETURNING id
+                """
+            ),
+            {"title": title, "created_at": now, "updated_at": now},
         )
-        conn.commit()
-        return cur.lastrowid
+        return int(created.scalar_one())
 
 
 def update_chat_thread_title(thread_id: int, title: str):
-    with get_conn() as conn:
+    with ENGINE.begin() as conn:
         conn.execute(
-            """
-            UPDATE chat_threads
-            SET title = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (title, _utcnow(), int(thread_id)),
+            text(
+                """
+                UPDATE chat_threads
+                SET title = :title, updated_at = :updated_at
+                WHERE id = :thread_id
+                """
+            ),
+            {
+                "title": title,
+                "updated_at": _utcnow(),
+                "thread_id": int(thread_id),
+            },
         )
-        conn.commit()
 
 
 def touch_chat_thread(thread_id: int):
-    with get_conn() as conn:
+    with ENGINE.begin() as conn:
         conn.execute(
-            "UPDATE chat_threads SET updated_at = ? WHERE id = ?",
-            (_utcnow(), int(thread_id)),
+            text("UPDATE chat_threads SET updated_at = :updated_at WHERE id = :thread_id"),
+            {"updated_at": _utcnow(), "thread_id": int(thread_id)},
         )
-        conn.commit()
 
 
 def list_chat_threads(limit: int = 50):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
-            FROM chat_threads
-            ORDER BY updated_at DESC, created_at DESC
-            LIMIT ?
-            """,
-            (int(limit),),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+                FROM chat_threads
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": int(limit)},
         )
-        rows = cur.fetchall()
+        rows = result.fetchall()
         return [
             {
                 "id": row[0],
@@ -758,17 +1000,19 @@ def list_chat_threads(limit: int = 50):
 
 
 def get_chat_thread(thread_id: int):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
-            FROM chat_threads
-            WHERE id = ?
-            LIMIT 1
-            """,
-            (int(thread_id),),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+                FROM chat_threads
+                WHERE id = :thread_id
+                LIMIT 1
+                """
+            ),
+            {"thread_id": int(thread_id)},
         )
-        row = cur.fetchone()
+        row = result.fetchone()
         if not row:
             return None
         return {
@@ -784,17 +1028,19 @@ def get_chat_thread(thread_id: int):
 
 
 def get_chat_messages(thread_id: int):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, role, content, created_at
-            FROM chat_messages
-            WHERE thread_id = ?
-            ORDER BY id ASC
-            """,
-            (int(thread_id),),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, role, content, created_at
+                FROM chat_messages
+                WHERE thread_id = :thread_id
+                ORDER BY id ASC
+                """
+            ),
+            {"thread_id": int(thread_id)},
         )
-        rows = cur.fetchall()
+        rows = result.fetchall()
         return [
             {
                 "id": row[0],
@@ -808,52 +1054,62 @@ def get_chat_messages(thread_id: int):
 
 def add_chat_message(thread_id: int, role: str, content: str):
     now = _utcnow()
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO chat_messages (thread_id, role, content, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (int(thread_id), role, content, now),
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                INSERT INTO chat_messages (thread_id, role, content, created_at)
+                VALUES (:thread_id, :role, :content, :created_at)
+                RETURNING id
+                """
+            ),
+            {
+                "thread_id": int(thread_id),
+                "role": role,
+                "content": content,
+                "created_at": now,
+            },
         )
         conn.execute(
-            "UPDATE chat_threads SET updated_at = ? WHERE id = ?",
-            (now, int(thread_id)),
+            text("UPDATE chat_threads SET updated_at = :updated_at WHERE id = :thread_id"),
+            {"updated_at": now, "thread_id": int(thread_id)},
         )
-        conn.commit()
-        return cur.lastrowid
+        return int(result.scalar_one())
 
 
 def clear_chat_thread(thread_id: int):
-    with get_conn() as conn:
+    with ENGINE.begin() as conn:
         conn.execute(
-            "DELETE FROM chat_messages WHERE thread_id = ?",
-            (int(thread_id),),
+            text("DELETE FROM chat_messages WHERE thread_id = :thread_id"),
+            {"thread_id": int(thread_id)},
         )
         conn.execute(
-            "UPDATE chat_threads SET updated_at = ? WHERE id = ?",
-            (_utcnow(), int(thread_id)),
+            text("UPDATE chat_threads SET updated_at = :updated_at WHERE id = :thread_id"),
+            {"updated_at": _utcnow(), "thread_id": int(thread_id)},
         )
-        conn.commit()
 
 
 def delete_chat_thread(thread_id: int):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM chat_threads WHERE id = ?", (int(thread_id),))
-        conn.commit()
+    with ENGINE.begin() as conn:
+        conn.execute(
+            text("DELETE FROM chat_threads WHERE id = :thread_id"),
+            {"thread_id": int(thread_id)},
+        )
 
 
 def get_user_profile():
-    with get_conn() as conn:
-        cur = conn.execute(
-            """
-            SELECT id, summary_text, created_at, updated_at
-            FROM user_profile
-            WHERE id = 1
-            LIMIT 1
-            """
+    with ENGINE.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id, summary_text, created_at, updated_at
+                FROM user_profile
+                WHERE id = 1
+                LIMIT 1
+                """
+            )
         )
-        row = cur.fetchone()
+        row = result.fetchone()
         if not row:
             return None
         return {
@@ -866,16 +1122,21 @@ def get_user_profile():
 
 def save_user_profile(summary_text: str):
     now = _utcnow()
-    with get_conn() as conn:
+    with ENGINE.begin() as conn:
         conn.execute(
-            """
-            INSERT INTO user_profile (id, summary_text, created_at, updated_at)
-            VALUES (1, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                summary_text = excluded.summary_text,
-                updated_at = excluded.updated_at
-            """,
-            (summary_text, now, now),
+            text(
+                """
+                INSERT INTO user_profile (id, summary_text, created_at, updated_at)
+                VALUES (1, :summary_text, :created_at, :updated_at)
+                ON CONFLICT(id) DO UPDATE SET
+                    summary_text = excluded.summary_text,
+                    updated_at = excluded.updated_at
+                """
+            ),
+            {
+                "summary_text": summary_text,
+                "created_at": now,
+                "updated_at": now,
+            },
         )
-        conn.commit()
     return get_user_profile()
