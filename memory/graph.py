@@ -26,6 +26,8 @@ from memory.tools import (
     rank_jobs_for_resume,
     save_application,
     search_jobs,
+    set_active_user_id,
+    reset_active_user_id,
     top_companies,
     web_search_jobs,
 )
@@ -90,6 +92,7 @@ def build_graph(
     thread_type: str = "job",
     thread_job_id: str | None = None,
     thread_resume_id: int | None = None,
+    thread_user_id: str | None = None,
 ):
     config_error = get_memory_setup_error()
     if config_error:
@@ -123,21 +126,21 @@ def build_graph(
             """Fetch the saved job attached to this Helper thread."""
             if not thread_job_id:
                 return None
-            return get_job(thread_job_id)
+            return get_job(thread_job_id, user_id=thread_user_id)
 
         @tool
         def get_current_resume() -> dict | None:
             """Fetch the saved resume attached to this Helper thread."""
             if thread_resume_id is None:
                 return None
-            return get_resume(int(thread_resume_id))
+            return get_resume(int(thread_resume_id), user_id=thread_user_id)
 
         @tool
         def get_current_application() -> dict | None:
             """Fetch the application record for the current Helper thread."""
             if not thread_job_id:
                 return None
-            return get_application_by_job(thread_job_id)
+            return get_application_by_job(thread_job_id, user_id=thread_user_id)
 
         @tool
         def update_current_application(
@@ -169,6 +172,7 @@ def build_graph(
                 resume_id=resolved_resume_id,
                 status=preview["proposed_application"]["status"],
                 notes=preview["proposed_application"]["notes"],
+                user_id=thread_user_id,
             )
 
         tools = [
@@ -187,7 +191,11 @@ def build_graph(
         if thread_context:
             messages.append(SystemMessage(content=thread_context))
         messages += state["messages"]
-        return {"messages": [llm_with_tools.invoke(messages)]}
+        token = set_active_user_id(thread_user_id)
+        try:
+            return {"messages": [llm_with_tools.invoke(messages)]}
+        finally:
+            reset_active_user_id(token)
 
     tool_node = ToolNode(tools)
 

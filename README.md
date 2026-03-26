@@ -40,12 +40,15 @@ Set values in `.env` for:
 - `OPENAI_API_KEY`
 - `TAVILY_API_KEY`
 - `DATABASE_URL` (optional for local dev, required for Supabase / hosted Postgres)
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
 
 Notes:
 - `OPENAI_API_KEY` is needed for Agent / Helper chat.
 - `TAVILY_API_KEY` is needed only for web-search tool usage.
 - If `DATABASE_URL` is not set, the app falls back to local SQLite at `jobs.db`.
 - If `DATABASE_URL` is set to a Postgres URL, the app uses Postgres instead.
+- `SUPABASE_URL` and `SUPABASE_ANON_KEY` are required for the multi-tenant sign-in flow.
 
 ## Run The Main App
 
@@ -124,6 +127,7 @@ http://localhost:8501
 This repo is set up for a free hosted deployment with:
 
 - Supabase Postgres for the live database
+- Supabase Auth for email/password sign-in
 - Render free web service for the live app
 - one Dockerized service that serves both FastAPI and the built React frontend
 
@@ -155,7 +159,10 @@ On Render:
    - `DATABASE_URL`
    - `OPENAI_API_KEY`
    - `TAVILY_API_KEY` (optional if you do not need web search)
-5. Deploy.
+5. Add these additional auth env vars:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+6. Deploy.
 
 The container builds the React frontend and serves it through FastAPI on one public URL.
 

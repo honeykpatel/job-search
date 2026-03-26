@@ -1276,3 +1276,38 @@ a {
     grid-template-columns: minmax(0, 1fr) 40px;
   }
 }
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+}
+
+.auth-card {
+  width: min(460px, 100%);
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.12));
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 16px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-error {
+  margin: 0;
+}
+
+.topbar-user {
+  margin: 4px 0 0;
+}
+
+.topbar-signout {
+  margin-left: 12px;
+}

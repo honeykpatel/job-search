@@ -105,11 +105,11 @@ def _follow_up_status(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_pipeline_summary() -> dict[str, Any]:
-    applications = list_applications(limit=200)
-    recent_jobs = list_recent_jobs(200)
-    recent_sessions = list_sessions(50)
-    saved_resumes = list_resumes(100)
+def build_pipeline_summary(user_id: str | None = None) -> dict[str, Any]:
+    applications = list_applications(limit=200, user_id=user_id)
+    recent_jobs = list_recent_jobs(200, user_id=user_id)
+    recent_sessions = list_sessions(50, user_id=user_id)
+    saved_resumes = list_resumes(100, user_id=user_id)
     status_order = ["saved", "applied", "interview", "offer", "rejected", "archived"]
     status_counts = {
         status: sum(1 for item in applications if item.get("status") == status)

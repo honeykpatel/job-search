@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 const PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Agent"];
 const APPLICATION_STATUSES = ["saved", "applied", "interview", "offer", "rejected", "archived"];
@@ -18,6 +19,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
       ...(options.headers || {}),
     },
     ...options,
@@ -36,6 +38,53 @@ async function api(path, options = {}) {
 
   const contentType = response.headers.get("content-type") || "";
   return contentType.includes("application/json") ? response.json() : response.text();
+}
+
+function AuthShell({ mode, form, loading, error, onModeChange, onChange, onSubmit }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-card">
+        <span className="status-pill">Private workspace</span>
+        <h1>Job Search Agent</h1>
+        <p className="muted">
+          Sign in to access your own search sessions, resumes, applications, Agent, and Helpers.
+        </p>
+        <form className="auth-form" onSubmit={onSubmit}>
+          <label className="field">
+            <span>Email</span>
+            <input
+              type="email"
+              value={form.email}
+              onChange={(event) => onChange({ ...form, email: event.target.value })}
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => onChange({ ...form, password: event.target.value })}
+              autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
+              required
+            />
+          </label>
+          <button className="action-button primary" type="submit" disabled={loading}>
+            {loading ? "Please wait..." : mode === "sign-in" ? "Sign In" : "Create Account"}
+          </button>
+        </form>
+        {error ? <p className="error-banner auth-error">{error}</p> : null}
+        <button
+          className="action-button subtle"
+          type="button"
+          onClick={() => onModeChange(mode === "sign-in" ? "sign-up" : "sign-in")}
+        >
+          {mode === "sign-in" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+        </button>
+      </section>
+    </main>
+  );
 }
 
 function formatDate(value) {
@@ -296,6 +345,13 @@ function MarkdownMessage({ content }) {
 }
 
 export default function App() {
+  const [authMode, setAuthMode] = useState("sign-in");
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [supabaseClient, setSupabaseClient] = useState(null);
+  const [session, setSession] = useState(null);
+  const [authConfigError, setAuthConfigError] = useState("");
   const [page, setPage] = useState("Job Search");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -353,10 +409,74 @@ export default function App() {
   const chatLogRef = useRef(null);
 
   useEffect(() => {
-    void bootstrap();
+    let isActive = true;
+    let unsubscribe = null;
+
+    void (async () => {
+      try {
+        const config = await api("/api/auth/config");
+        if (!isActive) {
+          return;
+        }
+        const client = createClient(config.supabase_url, config.supabase_anon_key);
+        const sessionResult = await client.auth.getSession();
+        if (!isActive) {
+          return;
+        }
+        setSupabaseClient(client);
+        setSession(sessionResult.data.session || null);
+        setAuthConfigError("");
+
+        const { data: listener } = client.auth.onAuthStateChange((_event, nextSession) => {
+          setSession(nextSession || null);
+        });
+        unsubscribe = () => listener.subscription.unsubscribe();
+
+        setAuthLoading(false);
+      } catch (err) {
+        if (!isActive) {
+          return;
+        }
+        setAuthConfigError(err.message);
+        setAuthLoading(false);
+      }
+      return undefined;
+    })();
+
+    return () => {
+      isActive = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   useEffect(() => {
+    if (!session?.access_token) {
+      setSessions([]);
+      setResumes([]);
+      setJobs([]);
+      setThreads([]);
+      setProfile({ summary_text: "" });
+      setProfileForm(emptyProfileForm());
+      setPipelineSummary(null);
+      setSelectedSessionId(null);
+      setSelectedResumeId(null);
+      setSelectedResume(null);
+      setSelectedThreadId(null);
+      setSelectedThread(null);
+      setPendingAction(null);
+      return;
+    }
+    void bootstrap(session.access_token);
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    if (!session?.access_token) {
+      setSelectedSessionJobs([]);
+      setSelectedSessionJobId("");
+      return;
+    }
     if (!selectedSessionId) {
       setSelectedSessionJobs([]);
       setSelectedSessionJobId("");
@@ -366,7 +486,7 @@ export default function App() {
     void (async () => {
       try {
         setError("");
-        const data = await api(`/api/sessions/${selectedSessionId}/jobs`);
+        const data = await api(`/api/sessions/${selectedSessionId}/jobs`, { accessToken: session?.access_token });
         setSelectedSessionJobs(data);
         setSelectedSessionJobId((current) => (data.some((job) => job.id === current) ? current : (data[0]?.id || "")));
       } catch (err) {
@@ -376,6 +496,10 @@ export default function App() {
   }, [selectedSessionId]);
 
   useEffect(() => {
+    if (!session?.access_token) {
+      setSelectedResume(null);
+      return;
+    }
     if (!selectedResumeId) {
       setSelectedResume(null);
       return;
@@ -384,7 +508,7 @@ export default function App() {
     void (async () => {
       try {
         setError("");
-        const data = await api(`/api/resumes/${selectedResumeId}`);
+        const data = await api(`/api/resumes/${selectedResumeId}`, { accessToken: session?.access_token });
         setSelectedResume(data);
       } catch (err) {
         setError(err.message);
@@ -393,10 +517,17 @@ export default function App() {
   }, [selectedResumeId]);
 
   useEffect(() => {
-    void loadApplicationJobs();
-  }, [applicationQuery, applicationStatusFilter, applicationLimit]);
+    if (session?.access_token) {
+      void loadApplicationJobs();
+    }
+  }, [applicationQuery, applicationStatusFilter, applicationLimit, session?.access_token]);
 
   useEffect(() => {
+    if (!session?.access_token) {
+      setSelectedThread(null);
+      setPendingAction(null);
+      return;
+    }
     if (!selectedThreadId) {
       setSelectedThread(null);
       setPendingAction(null);
@@ -404,7 +535,7 @@ export default function App() {
     }
     void loadThread(selectedThreadId);
     setPendingAction(null);
-  }, [selectedThreadId]);
+  }, [selectedThreadId, session?.access_token]);
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
@@ -414,19 +545,19 @@ export default function App() {
     chatLog.scrollTop = chatLog.scrollHeight;
   }, [page, selectedThreadId, selectedThread?.messages]);
 
-  async function bootstrap() {
+  async function bootstrap(accessToken) {
     try {
       setError("");
       let [sessionData, resumeData, recentJobs, threadData, profileData, pipelineData] = await Promise.all([
-        api("/api/sessions"),
-        api("/api/resumes"),
-        api("/api/jobs/recent?limit=200"),
-        api("/api/threads"),
-        api("/api/profile"),
-        api("/api/pipeline-summary"),
+        api("/api/sessions", { accessToken }),
+        api("/api/resumes", { accessToken }),
+        api("/api/jobs/recent?limit=200", { accessToken }),
+        api("/api/threads", { accessToken }),
+        api("/api/profile", { accessToken }),
+        api("/api/pipeline-summary", { accessToken }),
       ]);
       if (!threadData.some((thread) => thread.thread_type === "general")) {
-        const deepAgentThread = await api("/api/threads/general", { method: "POST" });
+        const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
         threadData = [deepAgentThread, ...threadData];
       }
       setSessions(sessionData);
@@ -449,15 +580,16 @@ export default function App() {
   }
 
   async function refreshCollections() {
+    const accessToken = session?.access_token;
     let [sessionData, resumeData, recentJobs, threadData, pipelineData] = await Promise.all([
-      api("/api/sessions"),
-      api("/api/resumes"),
-      api("/api/jobs/recent?limit=200"),
-      api("/api/threads"),
-      api("/api/pipeline-summary"),
+      api("/api/sessions", { accessToken }),
+      api("/api/resumes", { accessToken }),
+      api("/api/jobs/recent?limit=200", { accessToken }),
+      api("/api/threads", { accessToken }),
+      api("/api/pipeline-summary", { accessToken }),
     ]);
     if (!threadData.some((thread) => thread.thread_type === "general")) {
-      const deepAgentThread = await api("/api/threads/general", { method: "POST" });
+      const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
       threadData = [deepAgentThread, ...threadData];
     }
     setSessions(sessionData);
@@ -476,7 +608,7 @@ export default function App() {
   async function loadThread(threadId) {
     try {
       setError("");
-      const data = await api(`/api/threads/${threadId}`);
+      const data = await api(`/api/threads/${threadId}`, { accessToken: session?.access_token });
       setSelectedThread(data);
     } catch (err) {
       setError(err.message);
@@ -493,7 +625,7 @@ export default function App() {
       if (applicationStatusFilter !== "All") {
         params.set("status", applicationStatusFilter);
       }
-      const data = await api(`/api/jobs?${params.toString()}`);
+      const data = await api(`/api/jobs?${params.toString()}`, { accessToken: session?.access_token });
       setApplicationJobs(data);
       if (data.length) {
         setSelectedApplicationJobId((current) =>
@@ -516,6 +648,7 @@ export default function App() {
       const data = await api("/api/search", {
         method: "POST",
         body: JSON.stringify({ ...searchForm, k: Number(searchForm.k), save_results: true }),
+        accessToken: session?.access_token,
       });
       setSearchResult(data);
       setNotice(`Saved session #${data.session_id} with ${data.jobs.length} jobs.`);
@@ -542,7 +675,7 @@ export default function App() {
       setUploadingResume(true);
       setError("");
       setNotice("");
-      const resume = await api("/api/resumes", { method: "POST", body: formData });
+      const resume = await api("/api/resumes", { method: "POST", body: formData, accessToken: session?.access_token });
       setNotice(`Saved resume #${resume.id}.`);
       setSelectedResumeId(resume.id);
       setMatchResumeId(String(resume.id));
@@ -563,7 +696,7 @@ export default function App() {
       if (matchResumeId) {
         params.set("resume_id", matchResumeId);
       }
-      const data = await api(`/api/matches?${params.toString()}`);
+      const data = await api(`/api/matches?${params.toString()}`, { accessToken: session?.access_token });
       setMatchMeta(data.resume);
       setMatches(data.matches || []);
     } catch (err) {
@@ -580,6 +713,7 @@ export default function App() {
       const saved = await api("/api/profile", {
         method: "PUT",
         body: JSON.stringify({ summary_text: summaryText }),
+        accessToken: session?.access_token,
       });
       setProfile(saved);
       setProfileForm(parseProfileSummary(saved.summary_text || ""));
@@ -592,7 +726,7 @@ export default function App() {
   async function handleCreateGeneralThread() {
     try {
       setError("");
-      const thread = await api("/api/threads/general", { method: "POST" });
+      const thread = await api("/api/threads/general", { method: "POST", accessToken: session?.access_token });
       await refreshCollections();
       setSelectedThreadId(thread.id);
       setPage("Agent");
@@ -616,6 +750,7 @@ export default function App() {
           job_id: newThreadForm.job_id,
           resume_id: Number(newThreadForm.resume_id),
         }),
+        accessToken: session?.access_token,
       });
       await refreshCollections();
       setSelectedThreadId(thread.id);
@@ -642,6 +777,7 @@ export default function App() {
           content: chatInput,
           show_tool_debug: showToolDebug,
         }),
+        accessToken: session?.access_token,
       });
       setSelectedThread((current) => ({ ...(current || {}), messages: response.messages }));
       setPendingAction(response.pending_action || null);
@@ -661,7 +797,7 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/threads/${selectedThreadId}/clear`, { method: "POST" });
+      await api(`/api/threads/${selectedThreadId}/clear`, { method: "POST", accessToken: session?.access_token });
       setPendingAction(null);
       setTimelineEventsByThread((current) => ({ ...current, [selectedThreadId]: [] }));
       await loadThread(selectedThreadId);
@@ -674,7 +810,7 @@ export default function App() {
   async function handleDeleteThread(threadId) {
     try {
       setError("");
-      await api(`/api/threads/${threadId}`, { method: "DELETE" });
+      await api(`/api/threads/${threadId}`, { method: "DELETE", accessToken: session?.access_token });
       if (selectedThreadId === threadId) {
         setPendingAction(null);
       }
@@ -697,7 +833,7 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/sessions/${sessionId}`, { method: "DELETE" });
+      await api(`/api/sessions/${sessionId}`, { method: "DELETE", accessToken: session?.access_token });
       setNotice(`Deleted session #${sessionId} and its related jobs, chats, and tracker data.`);
       setSearchResult((current) =>
         current.session_id === sessionId ? { session_id: null, jobs: [], sources: {} } : current
@@ -722,7 +858,7 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/resumes/${resumeId}`, { method: "DELETE" });
+      await api(`/api/resumes/${resumeId}`, { method: "DELETE", accessToken: session?.access_token });
       if (selectedResumeId === resumeId) {
         setSelectedResumeId(null);
       }
@@ -744,6 +880,7 @@ export default function App() {
           status: job.application_status || "saved",
           notes: job.application_notes || "",
         }),
+        accessToken: session?.access_token,
       });
       setNotice(`Updated tracker for ${job.title || "job"}.`);
       await refreshCollections();
@@ -772,6 +909,7 @@ export default function App() {
           action_type: action.type,
           params: action.params,
         }),
+        accessToken: session?.access_token,
       });
       const eventText = approvalEventLabel(action.type, true);
       setPendingAction(null);
@@ -981,6 +1119,85 @@ export default function App() {
           "How should I prepare for this interview?",
           "Update this application plan",
         ];
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!supabaseClient) {
+      return;
+    }
+
+    try {
+      setAuthSubmitting(true);
+      setError("");
+      setNotice("");
+      if (authMode === "sign-in") {
+        const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+          email: authForm.email.trim(),
+          password: authForm.password,
+        });
+        if (signInError) {
+          throw signInError;
+        }
+      } else {
+        const { error: signUpError } = await supabaseClient.auth.signUp({
+          email: authForm.email.trim(),
+          password: authForm.password,
+        });
+        if (signUpError) {
+          throw signUpError;
+        }
+        setNotice("Account created. You can now sign in.");
+        setAuthMode("sign-in");
+      }
+      setAuthForm({ email: authForm.email.trim(), password: "" });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!supabaseClient) {
+      return;
+    }
+    try {
+      setError("");
+      await supabaseClient.auth.signOut();
+      setNotice("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  if (authLoading) {
+    return <main className="auth-shell"><section className="auth-card"><p>Loading authentication…</p></section></main>;
+  }
+
+  if (!supabaseClient || authConfigError) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card">
+          <h1>Job Search Agent</h1>
+          <p className="error-banner auth-error">{authConfigError || "Authentication is not configured."}</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!session?.access_token) {
+    return (
+      <AuthShell
+        mode={authMode}
+        form={authForm}
+        loading={authSubmitting}
+        error={error || authConfigError}
+        onModeChange={setAuthMode}
+        onChange={setAuthForm}
+        onSubmit={handleAuthSubmit}
+      />
+    );
+  }
 
   return (
     <div className="shell">
@@ -1219,6 +1436,7 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-title">
             <h1>Job Search Agent</h1>
+            <p className="muted topbar-user">{session.user?.email || "Signed in"}</p>
           </div>
           <nav className="topbar-nav">
             {PAGES.map((item) => (
@@ -1231,6 +1449,9 @@ export default function App() {
                 {item}
               </button>
             ))}
+            <button className="action-button subtle topbar-signout" type="button" onClick={handleSignOut}>
+              Sign Out
+            </button>
           </nav>
         </header>
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextvars import ContextVar
 import os
 from typing import Any
 
@@ -26,6 +27,20 @@ from storage.db import (
     update_chat_thread_title,
     upsert_application,
 )
+
+ACTIVE_USER_ID: ContextVar[str | None] = ContextVar("active_user_id", default=None)
+
+
+def set_active_user_id(user_id: str | None):
+    return ACTIVE_USER_ID.set(user_id)
+
+
+def reset_active_user_id(token) -> None:
+    ACTIVE_USER_ID.reset(token)
+
+
+def _current_user_id() -> str | None:
+    return ACTIVE_USER_ID.get()
 
 
 def _job_rows_to_dicts(rows: list[tuple]) -> list[dict]:
@@ -55,7 +70,7 @@ def _helper_job_candidates(job_reference: str, limit: int = 5) -> list[dict]:
     if not reference:
         return []
 
-    matches = db_search_jobs(query=reference, limit=max(int(limit), 1))
+    matches = db_search_jobs(query=reference, limit=max(int(limit), 1), user_id=_current_user_id())
     return [
         {
             "id": job.get("id"),
@@ -70,7 +85,7 @@ def _helper_job_candidates(job_reference: str, limit: int = 5) -> list[dict]:
 
 
 def _helper_resume_options(limit: int = 20) -> list[dict]:
-    resumes = db_list_resumes(limit)
+    resumes = db_list_resumes(limit, user_id=_current_user_id())
     return [
         {
             "id": resume["id"],
@@ -88,11 +103,11 @@ def _application_preview(
     notes: str | None,
     action_type: str,
 ) -> dict:
-    job = get_job(job_id)
+    job = get_job(job_id, user_id=_current_user_id())
     if not job:
         raise ValueError(f"Unknown job_id: {job_id}")
 
-    current = get_application_by_job(job_id)
+    current = get_application_by_job(job_id, user_id=_current_user_id())
     resolved_status = (
         status.strip()
         if isinstance(status, str) and status.strip()
@@ -104,7 +119,7 @@ def _application_preview(
         if notes is not None
         else (current.get("notes") if current else "")
     )
-    resume = get_resume(int(resolved_resume_id)) if resolved_resume_id is not None else None
+    resume = get_resume(int(resolved_resume_id), user_id=_current_user_id()) if resolved_resume_id is not None else None
     return {
         "job": {
             "id": job.get("id"),
@@ -135,7 +150,7 @@ def _application_preview(
 @tool
 def list_recent_sessions(limit: int = 20) -> list[dict]:
     """List recent search sessions."""
-    rows = list_sessions(limit)
+    rows = list_sessions(limit, user_id=_current_user_id())
     return [
         {
             "id": r[0],
@@ -152,35 +167,35 @@ def list_recent_sessions(limit: int = 20) -> list[dict]:
 @tool
 def get_session_jobs(session_id: int) -> list[dict]:
     """Get jobs for a given session id."""
-    rows = get_jobs_for_session(int(session_id))
+    rows = get_jobs_for_session(int(session_id), user_id=_current_user_id())
     return _job_rows_to_dicts(rows)
 
 
 @tool
 def list_jobs(limit: int = 20) -> list[dict]:
     """List the most recent jobs saved in the database."""
-    return list_recent_jobs(limit)
+    return list_recent_jobs(limit, user_id=_current_user_id())
 
 
 @tool
 def search_jobs(query: str, limit: int = 10, status: str | None = None) -> list[dict]:
     """Search saved jobs by title, company, location, source, or description."""
-    return db_search_jobs(query=query, limit=limit, status=status)
+    return db_search_jobs(query=query, limit=limit, status=status, user_id=_current_user_id())
 
 
 @tool
 def get_job_details(job_id: str) -> dict | None:
     """Fetch one saved job by job_id."""
-    return get_job(job_id)
+    return get_job(job_id, user_id=_current_user_id())
 
 
 @tool
 def top_companies(session_id: int | None = None, limit: int = 10) -> list[dict]:
     """Return the most common companies in a session or across recent jobs."""
     if session_id is None:
-        jobs = list_recent_jobs(500)
+        jobs = list_recent_jobs(500, user_id=_current_user_id())
     else:
-        jobs = _job_rows_to_dicts(get_jobs_for_session(int(session_id)))
+        jobs = _job_rows_to_dicts(get_jobs_for_session(int(session_id), user_id=_current_user_id()))
 
     counts = Counter(_safe_company(j.get("company")) for j in jobs)
     if None in counts:
@@ -195,7 +210,7 @@ def top_companies(session_id: int | None = None, limit: int = 10) -> list[dict]:
 @tool
 def list_resumes(limit: int = 20) -> list[dict]:
     """List saved resumes."""
-    resumes = db_list_resumes(limit)
+    resumes = db_list_resumes(limit, user_id=_current_user_id())
     return [
         {
             "id": resume["id"],
@@ -210,11 +225,11 @@ def list_resumes(limit: int = 20) -> list[dict]:
 def get_resume_details(resume_id: int | None = None) -> dict | None:
     """Fetch a saved resume by resume_id. If omitted, returns the latest resume."""
     if resume_id is None:
-        row = db_get_latest_resume()
+        row = db_get_latest_resume(user_id=_current_user_id())
         if not row:
             return None
         return {"id": row[0], "filename": row[1], "text": row[2], "created_at": row[3]}
-    return get_resume(int(resume_id))
+    return get_resume(int(resume_id), user_id=_current_user_id())
 
 
 @tool
@@ -223,17 +238,17 @@ def rank_jobs_for_resume(
 ) -> list[dict]:
     """Rank saved jobs against a specific resume or the latest resume."""
     if resume_id is None:
-        latest = db_get_latest_resume()
+        latest = db_get_latest_resume(user_id=_current_user_id())
         if not latest:
             return []
         resume_text = latest[2]
     else:
-        resume = get_resume(int(resume_id))
+        resume = get_resume(int(resume_id), user_id=_current_user_id())
         if not resume:
             return []
         resume_text = resume["text"]
 
-    jobs = db_search_jobs(query=query, limit=500) if query.strip() else list_recent_jobs(500)
+    jobs = db_search_jobs(query=query, limit=500, user_id=_current_user_id()) if query.strip() else list_recent_jobs(500, user_id=_current_user_id())
     ranked = rank_jobs(resume_text, jobs, top_k=int(top_k))
     return [{"score": float(score), "job": job} for job, score in ranked]
 
@@ -241,13 +256,13 @@ def rank_jobs_for_resume(
 @tool
 def list_applications(status: str | None = None, limit: int = 20) -> list[dict]:
     """List tracked job applications, optionally filtered by status."""
-    return db_list_applications(status=status, limit=limit)
+    return db_list_applications(status=status, limit=limit, user_id=_current_user_id())
 
 
 @tool
 def get_application(job_id: str) -> dict | None:
     """Fetch the application record for a given job_id."""
-    return get_application_by_job(job_id)
+    return get_application_by_job(job_id, user_id=_current_user_id())
 
 
 @tool
@@ -278,6 +293,7 @@ def save_application(
         resume_id=resume_id,
         status=preview["proposed_application"]["status"],
         notes=preview["proposed_application"]["notes"],
+        user_id=_current_user_id(),
     )
 
 
@@ -304,7 +320,7 @@ def web_search_jobs(query: str) -> list[dict]:
 @tool
 def list_helpers(limit: int = 50) -> list[dict]:
     """List existing Helper threads."""
-    threads = list_chat_threads(limit)
+    threads = list_chat_threads(limit, user_id=_current_user_id())
     return [
         {
             "id": thread["id"],
@@ -335,12 +351,12 @@ def create_helper(
     resolved_job = None
     resolved_job_id = (job_id or "").strip()
     if resolved_job_id:
-        resolved_job = get_job(resolved_job_id)
+        resolved_job = get_job(resolved_job_id, user_id=_current_user_id())
         if not resolved_job:
             fallback_candidates = _helper_job_candidates(resolved_job_id)
             if len(fallback_candidates) == 1:
                 resolved_job_id = str(fallback_candidates[0]["id"])
-                resolved_job = get_job(resolved_job_id)
+                resolved_job = get_job(resolved_job_id, user_id=_current_user_id())
             else:
                 return {
                     "ok": False,
@@ -365,7 +381,7 @@ def create_helper(
                 "job_candidates": candidates,
             }
         resolved_job_id = str(candidates[0]["id"])
-        resolved_job = get_job(resolved_job_id)
+        resolved_job = get_job(resolved_job_id, user_id=_current_user_id())
 
     if not resolved_job:
         return {
@@ -391,7 +407,7 @@ def create_helper(
             "resume_options": _helper_resume_options(),
         }
 
-    resume = get_resume(int(resume_id))
+    resume = get_resume(int(resume_id), user_id=_current_user_id())
     if not resume:
         return {
             "ok": False,
@@ -448,8 +464,9 @@ def create_helper(
         thread_type="job",
         job_id=resolved_job_id,
         resume_id=int(resume_id),
+        user_id=_current_user_id(),
     )
-    thread = get_chat_thread(thread_id)
+    thread = get_chat_thread(thread_id, user_id=_current_user_id())
     if not thread:
         raise ValueError("Failed to load Helper after creation.")
     return {"ok": True, "helper": thread}
@@ -458,7 +475,7 @@ def create_helper(
 @tool
 def rename_helper(helper_id: int, title: str, confirm: bool = False) -> dict:
     """Rename an existing Helper thread. Preview first unless confirm=true."""
-    helper = get_chat_thread(int(helper_id))
+    helper = get_chat_thread(int(helper_id), user_id=_current_user_id())
     if not helper or helper.get("thread_type") != "job":
         raise ValueError(f"Unknown Helper id: {helper_id}")
 
@@ -486,8 +503,8 @@ def rename_helper(helper_id: int, title: str, confirm: bool = False) -> dict:
             "preview": preview,
         }
 
-    update_chat_thread_title(int(helper_id), new_title)
-    updated = get_chat_thread(int(helper_id))
+    update_chat_thread_title(int(helper_id), new_title, user_id=_current_user_id())
+    updated = get_chat_thread(int(helper_id), user_id=_current_user_id())
     if not updated:
         raise ValueError("Failed to load Helper after rename.")
     return updated
@@ -496,7 +513,7 @@ def rename_helper(helper_id: int, title: str, confirm: bool = False) -> dict:
 @tool
 def delete_helper(helper_id: int, confirm: bool = False) -> dict:
     """Delete an existing Helper thread. Preview first unless confirm=true."""
-    helper = get_chat_thread(int(helper_id))
+    helper = get_chat_thread(int(helper_id), user_id=_current_user_id())
     if not helper or helper.get("thread_type") != "job":
         raise ValueError(f"Unknown Helper id: {helper_id}")
 
@@ -522,5 +539,5 @@ def delete_helper(helper_id: int, confirm: bool = False) -> dict:
             "preview": preview,
         }
 
-    delete_chat_thread(int(helper_id))
+    delete_chat_thread(int(helper_id), user_id=_current_user_id())
     return {"ok": True, "deleted_helper_id": int(helper_id)}
