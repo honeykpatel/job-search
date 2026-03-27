@@ -592,17 +592,30 @@ export default function App() {
       const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
       threadData = [deepAgentThread, ...threadData];
     }
+    const nextSelectedSessionId =
+      selectedSessionId && sessionData.some((session) => session.id === selectedSessionId)
+        ? selectedSessionId
+        : null;
     setSessions(sessionData);
     setResumes(resumeData);
     setJobs(recentJobs);
     setThreads(threadData);
     setPipelineSummary(pipelineData);
-    setSelectedSessionId((current) =>
-      current && sessionData.some((session) => session.id === current) ? current : null
-    );
+    setSelectedSessionId(nextSelectedSessionId);
     setSelectedThreadId((current) =>
       current && threadData.some((thread) => thread.id === current) ? current : null
     );
+    if (nextSelectedSessionId) {
+      const sessionJobs = await api(`/api/sessions/${nextSelectedSessionId}/jobs`, { accessToken });
+      setSelectedSessionJobs(sessionJobs);
+      setSelectedSessionJobId((current) =>
+        sessionJobs.some((job) => job.id === current) ? current : (sessionJobs[0]?.id || "")
+      );
+    } else {
+      setSelectedSessionJobs([]);
+      setSelectedSessionJobId("");
+    }
+    await loadApplicationJobs();
   }
 
   async function loadThread(threadId) {
