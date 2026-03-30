@@ -45,7 +45,7 @@ function AuthShell({ mode, form, loading, error, onModeChange, onChange, onSubmi
     <main className="auth-shell">
       <section className="auth-card">
         <span className="status-pill">Private workspace</span>
-        <h1>Job Search Agent</h1>
+        <h1>Job Pilot</h1>
         <p className="muted">
           Sign in to access your own search sessions, resumes, applications, Agent, and Helpers.
         </p>
@@ -1191,7 +1191,7 @@ export default function App() {
     return (
       <main className="auth-shell">
         <section className="auth-card">
-          <h1>Job Search Agent</h1>
+          <h1>Job Pilot</h1>
           <p className="error-banner auth-error">{authConfigError || "Authentication is not configured."}</p>
         </section>
       </main>
@@ -1448,7 +1448,7 @@ export default function App() {
       <main className="content">
         <header className="topbar">
           <div className="topbar-title">
-            <h1>Job Search Agent</h1>
+            <h1>Job Pilot</h1>
             <p className="muted topbar-user">{session.user?.email || "Signed in"}</p>
           </div>
           <nav className="topbar-nav">

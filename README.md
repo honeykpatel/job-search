@@ -1,4 +1,4 @@
-# Job Search Agent
+# Job Pilot
 
 Local job-search workspace with:
 - FastAPI backend

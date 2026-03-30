@@ -70,7 +70,7 @@ init_db()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
-app = FastAPI(title="Job Search API")
+app = FastAPI(title="Job Pilot API")
 
 app.add_middleware(
     CORSMiddleware,

@@ -128,7 +128,7 @@ def _new_chat_dialog():
         st.session_state["selected_thread_id"] = thread_id
         st.rerun()
 
-st.set_page_config(page_title="Job Search Agent (Local)", layout="wide")
+st.set_page_config(page_title="Job Pilot", layout="wide")
 
 st.markdown(
     """
