@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import bindparam, create_engine, event, inspect, text
 from sqlalchemy.engine import Engine, Row
+from sqlalchemy.pool import NullPool
 
 from utils.company_inference import ensure_job_company
 
@@ -35,7 +36,16 @@ DATABASE_URL = _normalize_database_url(os.getenv("DATABASE_URL"))
 
 
 def _build_engine() -> Engine:
-    engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True)
+    engine_kwargs: dict[str, Any] = {
+        "future": True,
+        "pool_pre_ping": True,
+    }
+    if not DATABASE_URL.startswith("sqlite"):
+        # Supabase already provides pooling. Disable SQLAlchemy's pool so this
+        # app does not hold extra idle Postgres connections open.
+        engine_kwargs["poolclass"] = NullPool
+
+    engine = create_engine(DATABASE_URL, **engine_kwargs)
 
     if DATABASE_URL.startswith("sqlite"):
         @event.listens_for(engine, "connect")
