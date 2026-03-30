@@ -14,12 +14,7 @@ from fastapi.responses import FileResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from collectors.api_remotive import search_remotive
-from collectors.api_themuse import search_themuse
-from collectors.api_usajobs import search_usajobs
-from collectors.board_ashby import search_ashby
-from collectors.board_greenhouse import search_greenhouse
-from collectors.rss_remoteok import search_remoteok
+from collectors.api_adzuna import search_adzuna
 from app.auth import auth_config, require_user_id
 from app.conversation import (
     build_langchain_messages,
@@ -96,8 +91,6 @@ class SearchRequest(BaseModel):
     location: str = ""
     work_style: str = "Any"
     k: int = Field(default=5, ge=1, le=20)
-    greenhouse_board: str = ""
-    ashby_board: str = ""
     save_results: bool = True
 
 
@@ -232,27 +225,11 @@ def run_search(payload: SearchRequest, current_user_id: str = Depends(require_us
         raise HTTPException(status_code=400, detail="job_title is required")
 
     try:
-        jobs_remoteok = search_remoteok(job_title, payload.k)
-        jobs_remotive = search_remotive(job_title, payload.k)
-        jobs_themuse = search_themuse(job_title, payload.k)
-        jobs_usajobs = search_usajobs(job_title, payload.location.strip(), payload.k)
-        jobs_greenhouse = (
-            search_greenhouse(payload.greenhouse_board.strip(), job_title, payload.k)
-            if payload.greenhouse_board.strip()
-            else []
-        )
-        jobs_ashby = (
-            search_ashby(payload.ashby_board.strip(), job_title, payload.k)
-            if payload.ashby_board.strip()
-            else []
-        )
+        jobs_adzuna = search_adzuna(job_title, payload.location.strip(), payload.work_style, payload.k)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    jobs = interleave_jobs(
-        [jobs_remoteok, jobs_remotive, jobs_themuse, jobs_usajobs, jobs_greenhouse, jobs_ashby],
-        payload.k,
-    )
+    jobs = interleave_jobs([jobs_adzuna], payload.k)
     jobs = [ensure_job_company(job) for job in jobs]
     jobs = dedupe_jobs(jobs)[: payload.k]
 
@@ -271,12 +248,7 @@ def run_search(payload: SearchRequest, current_user_id: str = Depends(require_us
         "session_id": session_id,
         "jobs": jobs,
         "sources": {
-            "remoteok": len(jobs_remoteok),
-            "remotive": len(jobs_remotive),
-            "themuse": len(jobs_themuse),
-            "usajobs": len(jobs_usajobs),
-            "greenhouse": len(jobs_greenhouse),
-            "ashby": len(jobs_ashby),
+            "adzuna": len(jobs_adzuna),
         },
     }
 

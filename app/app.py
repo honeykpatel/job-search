@@ -14,13 +14,8 @@ from app.conversation import (
     thread_title_from_context,
 )
 from storage.db import init_db, save_session, list_sessions
-from collectors.rss_remoteok import search_remoteok
 from storage.db import delete_session, save_jobs_for_session, get_jobs_for_session
-from collectors.api_remotive import search_remotive
-from collectors.api_themuse import search_themuse
-from collectors.api_usajobs import search_usajobs
-from collectors.board_greenhouse import search_greenhouse
-from collectors.board_ashby import search_ashby
+from collectors.api_adzuna import search_adzuna
 from utils.dedupe import dedupe_jobs
 from storage.db import (
     add_chat_message,
@@ -403,8 +398,6 @@ location = ""
 work_style = "Any"
 k = 5
 do_search = False
-greenhouse_board = ""
-ashby_board = ""
 selected_thread_id = None
 show_tool_debug = False
 
@@ -598,20 +591,6 @@ if active_page == "Job Search":
     with filter_cols[3]:
         k = st.slider("Results", 1, 20, 5, key="search_k")
 
-    board_cols = st.columns(2)
-    with board_cols[0]:
-        greenhouse_board = st.text_input(
-            "Greenhouse board",
-            placeholder="e.g., greenhouse.io/acme",
-            key="search_greenhouse_board",
-        )
-    with board_cols[1]:
-        ashby_board = st.text_input(
-            "Ashby board",
-            placeholder="e.g., jobs.ashbyhq.com/acme",
-            key="search_ashby_board",
-        )
-
     action_cols = st.columns([1, 1, 3])
     with action_cols[0]:
         do_search = st.button("Search for Jobs", key="search_submit")
@@ -628,27 +607,8 @@ if active_page == "Job Search":
         if not job_title.strip():
             st.warning("Please enter a Job Title to perform a search.")
         else:
-            jobs_remoteok = search_remoteok(job_title.strip(), int(k))
-            jobs_remotive = search_remotive(job_title.strip(), int(k))
-            jobs_themuse = search_themuse(job_title.strip(), int(k))
-            jobs_usajobs = search_usajobs(job_title.strip(), location.strip(), int(k))
-            jobs_greenhouse = (
-                search_greenhouse(greenhouse_board.strip(), job_title.strip(), int(k))
-                if greenhouse_board.strip()
-                else []
-            )
-            jobs_ashby = (
-                search_ashby(ashby_board.strip(), job_title.strip(), int(k))
-                if ashby_board.strip()
-                else []
-            )
-            jobs = interleave_jobs(
-                [jobs_remoteok, jobs_remotive, jobs_themuse, jobs_usajobs, jobs_greenhouse, jobs_ashby], int(k)
-            )
-            if greenhouse_board.strip():
-                pass
-            if ashby_board.strip():
-                pass
+            jobs_adzuna = search_adzuna(job_title.strip(), location.strip(), work_style, int(k))
+            jobs = interleave_jobs([jobs_adzuna], int(k))
             jobs = dedupe_jobs(jobs)[: int(k)]
             sid = save_session(job_title.strip(), location.strip(), work_style, int(k))
             save_jobs_for_session(sid, jobs)

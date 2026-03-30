@@ -369,8 +369,6 @@ export default function App() {
     location: "",
     work_style: "Any",
     k: 5,
-    greenhouse_board: "",
-    ashby_board: "",
   });
   const [searchResult, setSearchResult] = useState({ session_id: null, jobs: [], sources: {} });
   const [searching, setSearching] = useState(false);
@@ -2080,6 +2078,7 @@ export default function App() {
                   <input
                     value={searchForm.location}
                     onChange={(event) => setSearchForm({ ...searchForm, location: event.target.value })}
+                    placeholder="e.g. Toronto, Canada"
                   />
                 </label>
                 <label className="field">
@@ -2106,23 +2105,7 @@ export default function App() {
                     onChange={(event) => setSearchForm({ ...searchForm, k: event.target.value })}
                   />
                 </label>
-                <label className="field">
-                  <span>Greenhouse board</span>
-                  <input
-                    value={searchForm.greenhouse_board}
-                    onChange={(event) => setSearchForm({ ...searchForm, greenhouse_board: event.target.value })}
-                    placeholder="greenhouse.io/acme"
-                  />
-                </label>
               </div>
-              <label className="field">
-                <span>Ashby board</span>
-                <input
-                  value={searchForm.ashby_board}
-                  onChange={(event) => setSearchForm({ ...searchForm, ashby_board: event.target.value })}
-                  placeholder="jobs.ashbyhq.com/acme"
-                />
-              </label>
               <div className="modal-actions">
                 <button className="action-button" type="button" onClick={() => setShowSearchModal(false)}>
                   Cancel
