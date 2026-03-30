@@ -1215,6 +1215,13 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-mark">JP</div>
+          <div className="sidebar-brand-copy">
+            <strong>Job Pilot</strong>
+            <span className="sidebar-caption">Private search workspace</span>
+          </div>
+        </div>
         <section className="sidebar-card sidebar-panel">
           {page === "Profile" ? (
             <>
