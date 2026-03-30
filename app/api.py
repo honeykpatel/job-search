@@ -15,6 +15,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from collectors.api_remotive import search_remotive
+from collectors.api_themuse import search_themuse
+from collectors.api_usajobs import search_usajobs
 from collectors.board_ashby import search_ashby
 from collectors.board_greenhouse import search_greenhouse
 from collectors.rss_remoteok import search_remoteok
@@ -232,6 +234,8 @@ def run_search(payload: SearchRequest, current_user_id: str = Depends(require_us
     try:
         jobs_remoteok = search_remoteok(job_title, payload.k)
         jobs_remotive = search_remotive(job_title, payload.k)
+        jobs_themuse = search_themuse(job_title, payload.k)
+        jobs_usajobs = search_usajobs(job_title, payload.location.strip(), payload.k)
         jobs_greenhouse = (
             search_greenhouse(payload.greenhouse_board.strip(), job_title, payload.k)
             if payload.greenhouse_board.strip()
@@ -246,7 +250,7 @@ def run_search(payload: SearchRequest, current_user_id: str = Depends(require_us
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     jobs = interleave_jobs(
-        [jobs_remoteok, jobs_remotive, jobs_greenhouse, jobs_ashby],
+        [jobs_remoteok, jobs_remotive, jobs_themuse, jobs_usajobs, jobs_greenhouse, jobs_ashby],
         payload.k,
     )
     jobs = [ensure_job_company(job) for job in jobs]
@@ -269,6 +273,8 @@ def run_search(payload: SearchRequest, current_user_id: str = Depends(require_us
         "sources": {
             "remoteok": len(jobs_remoteok),
             "remotive": len(jobs_remotive),
+            "themuse": len(jobs_themuse),
+            "usajobs": len(jobs_usajobs),
             "greenhouse": len(jobs_greenhouse),
             "ashby": len(jobs_ashby),
         },

@@ -17,6 +17,8 @@ from storage.db import init_db, save_session, list_sessions
 from collectors.rss_remoteok import search_remoteok
 from storage.db import delete_session, save_jobs_for_session, get_jobs_for_session
 from collectors.api_remotive import search_remotive
+from collectors.api_themuse import search_themuse
+from collectors.api_usajobs import search_usajobs
 from collectors.board_greenhouse import search_greenhouse
 from collectors.board_ashby import search_ashby
 from utils.dedupe import dedupe_jobs
@@ -628,6 +630,8 @@ if active_page == "Job Search":
         else:
             jobs_remoteok = search_remoteok(job_title.strip(), int(k))
             jobs_remotive = search_remotive(job_title.strip(), int(k))
+            jobs_themuse = search_themuse(job_title.strip(), int(k))
+            jobs_usajobs = search_usajobs(job_title.strip(), location.strip(), int(k))
             jobs_greenhouse = (
                 search_greenhouse(greenhouse_board.strip(), job_title.strip(), int(k))
                 if greenhouse_board.strip()
@@ -639,7 +643,7 @@ if active_page == "Job Search":
                 else []
             )
             jobs = interleave_jobs(
-                [jobs_remoteok, jobs_remotive, jobs_greenhouse, jobs_ashby], int(k)
+                [jobs_remoteok, jobs_remotive, jobs_themuse, jobs_usajobs, jobs_greenhouse, jobs_ashby], int(k)
             )
             if greenhouse_board.strip():
                 pass
