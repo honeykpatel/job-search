@@ -5,6 +5,7 @@ Local job-search workspace with:
 - React frontend
 - legacy Streamlit UI
 - SQLite or Postgres persistence
+- Adzuna-backed job search
 - resume matching
 - Agent / Helper chat workflows
 
@@ -39,6 +40,9 @@ Set values in `.env` for:
 
 - `OPENAI_API_KEY`
 - `TAVILY_API_KEY`
+- `ADZUNA_APP_ID`
+- `ADZUNA_APP_KEY`
+- `ADZUNA_DEFAULT_COUNTRY`
 - `DATABASE_URL` (optional for local dev, required for Supabase / hosted Postgres)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -46,6 +50,8 @@ Set values in `.env` for:
 Notes:
 - `OPENAI_API_KEY` is needed for Agent / Helper chat.
 - `TAVILY_API_KEY` is needed only for web-search tool usage.
+- `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are required for job search.
+- `ADZUNA_DEFAULT_COUNTRY` is the fallback Adzuna market, for example `ca`.
 - If `DATABASE_URL` is not set, the app falls back to local SQLite at `jobs.db`.
 - If `DATABASE_URL` is set to a Postgres URL, the app uses Postgres instead.
 - `SUPABASE_URL` and `SUPABASE_ANON_KEY` are required for the multi-tenant sign-in flow.
@@ -116,7 +122,7 @@ http://localhost:8501
 
 ## What The App Does
 
-1. Collects jobs from supported sources.
+1. Collects jobs from Adzuna.
 2. Saves jobs and search sessions in the configured database.
 3. Stores resumes and extracted resume text.
 4. Ranks saved jobs against resumes using TF-IDF.
@@ -158,6 +164,9 @@ On Render:
 4. Set these environment variables:
    - `DATABASE_URL`
    - `OPENAI_API_KEY`
+   - `ADZUNA_APP_ID`
+   - `ADZUNA_APP_KEY`
+   - `ADZUNA_DEFAULT_COUNTRY`
    - `TAVILY_API_KEY` (optional if you do not need web search)
 5. Add these additional auth env vars:
    - `SUPABASE_URL`
