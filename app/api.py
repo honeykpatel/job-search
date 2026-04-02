@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from collectors.api_adzuna import search_adzuna
 from app.auth import auth_config, require_user_id
+from app.auth import require_admin, verify_admin_login
 from app.conversation import (
     build_langchain_messages,
     build_thread_context,
@@ -32,6 +33,11 @@ from storage.db import (
     clear_chat_thread,
     create_chat_thread,
     delete_application,
+    admin_delete_table_row,
+    admin_get_table_data,
+    admin_insert_table_row,
+    admin_list_tables,
+    admin_update_table_row,
     delete_chat_thread,
     delete_resume,
     delete_session,
@@ -51,6 +57,7 @@ from storage.db import (
     list_sessions,
     save_jobs_for_session,
     save_resume,
+    save_user_account_profile,
     save_session,
     save_user_profile,
     search_jobs as db_search_jobs,
@@ -104,6 +111,11 @@ class ProfileUpdateRequest(BaseModel):
     summary_text: str = ""
 
 
+class AccountUpdateRequest(BaseModel):
+    full_name: str = ""
+    phone: str = ""
+
+
 class CreateThreadRequest(BaseModel):
     job_id: str
     resume_id: int
@@ -117,6 +129,24 @@ class ChatRequest(BaseModel):
 class ApprovalActionRequest(BaseModel):
     action_type: str
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AdminRowCreateRequest(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminRowUpdateRequest(BaseModel):
+    primary_key: dict[str, Any] = Field(default_factory=dict)
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminRowDeleteRequest(BaseModel):
+    primary_key: dict[str, Any] = Field(default_factory=dict)
 
 
 def _parse_tool_payload(content: Any) -> dict[str, Any] | None:
@@ -216,6 +246,82 @@ def health_check() -> dict[str, str]:
 @app.get("/api/auth/config")
 def get_auth_config() -> dict[str, str]:
     return auth_config()
+
+
+@app.post("/api/admin/login")
+def admin_login(payload: AdminLoginRequest) -> dict[str, Any]:
+    return verify_admin_login(payload.username, payload.password)
+
+
+@app.get("/api/admin/session")
+def get_admin_session(admin_session: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    return {
+        "username": admin_session.get("sub"),
+        "expires_at": admin_session.get("exp"),
+    }
+
+
+@app.get("/api/admin/tables")
+def get_admin_tables(admin_session: dict[str, Any] = Depends(require_admin)) -> list[dict[str, Any]]:
+    _ = admin_session
+    return admin_list_tables()
+
+
+@app.get("/api/admin/tables/{table_name}")
+def get_admin_table(
+    table_name: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    search: str = "",
+    admin_session: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    _ = admin_session
+    try:
+        return admin_get_table_data(table_name, limit=limit, offset=offset, search=search)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/admin/tables/{table_name}/rows")
+def create_admin_table_row(
+    table_name: str,
+    payload: AdminRowCreateRequest,
+    admin_session: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    _ = admin_session
+    try:
+        return admin_insert_table_row(table_name, payload.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/api/admin/tables/{table_name}/rows")
+def update_admin_table_row(
+    table_name: str,
+    payload: AdminRowUpdateRequest,
+    admin_session: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    _ = admin_session
+    try:
+        return admin_update_table_row(table_name, payload.primary_key, payload.values)
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@app.delete("/api/admin/tables/{table_name}/rows")
+def delete_admin_table_row(
+    table_name: str,
+    payload: AdminRowDeleteRequest,
+    admin_session: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    _ = admin_session
+    try:
+        deleted = admin_delete_table_row(table_name, payload.primary_key)
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return {"ok": True, "deleted": deleted}
 
 
 @app.post("/api/search")
@@ -413,7 +519,17 @@ def delete_application_route(job_id: str, current_user_id: str = Depends(require
 
 @app.get("/api/profile")
 def get_profile(current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
-    return get_user_profile(user_id=current_user_id) or {"summary_text": ""}
+    return get_user_profile(user_id=current_user_id) or {"full_name": "", "phone": "", "summary_text": ""}
+
+
+@app.get("/api/account")
+def get_account(current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
+    profile = get_user_profile(user_id=current_user_id) or {}
+    return {
+        "full_name": str(profile.get("full_name") or ""),
+        "phone": str(profile.get("phone") or ""),
+        "summary_text": str(profile.get("summary_text") or ""),
+    }
 
 
 @app.get("/api/pipeline-summary")
@@ -424,6 +540,17 @@ def get_pipeline_summary(current_user_id: str = Depends(require_user_id)) -> dic
 @app.put("/api/profile")
 def update_profile(payload: ProfileUpdateRequest, current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
     return save_user_profile(payload.summary_text, user_id=current_user_id)
+
+
+@app.put("/api/account")
+def update_account(payload: AccountUpdateRequest, current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
+    profile = save_user_account_profile(payload.full_name, payload.phone, user_id=current_user_id)
+    return {
+        "full_name": str(profile.get("full_name") or ""),
+        "phone": str(profile.get("phone") or ""),
+        "summary_text": str(profile.get("summary_text") or ""),
+        "updated_at": profile.get("updated_at"),
+    }
 
 
 @app.get("/api/threads")

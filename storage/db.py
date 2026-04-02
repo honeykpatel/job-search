@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import bindparam, create_engine, event, inspect, text
+from sqlalchemy import MetaData, String, bindparam, cast, create_engine, event, func, inspect, or_, select, text
 from sqlalchemy.engine import Engine, Row
 from sqlalchemy.pool import NullPool
 
@@ -80,6 +80,21 @@ def _ensure_column(table: str, column: str, definition: str) -> None:
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
 
 
+def _inspector():
+    return inspect(ENGINE)
+
+
+def _reflect_table(table_name: str):
+    inspector = _inspector()
+    table_names = set(inspector.get_table_names())
+    if table_name not in table_names:
+        raise ValueError(f"Unknown table: {table_name}")
+
+    metadata = MetaData()
+    metadata.reflect(bind=ENGINE, only=[table_name])
+    return metadata.tables[table_name]
+
+
 def _fetchall_tuples(result) -> list[tuple]:
     return [tuple(row) for row in result.fetchall()]
 
@@ -90,6 +105,48 @@ def _row_to_tuple(row: Row[Any] | None) -> tuple | None:
 
 def _resolve_user_id(user_id: str | None = None) -> str:
     return (user_id or "").strip() or DEFAULT_LOCAL_USER_ID
+
+
+def _serialize_row_mapping(mapping: Any) -> dict[str, Any]:
+    return {key: value for key, value in dict(mapping).items()}
+
+
+def _coerce_table_value(column, value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "" and column.nullable:
+            return None
+        value = stripped if stripped != "" else value
+
+    try:
+        python_type = column.type.python_type
+    except (AttributeError, NotImplementedError):
+        return value
+
+    if value is None or isinstance(value, python_type):
+        return value
+    if python_type is bool and isinstance(value, str):
+        lowered = value.lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    return python_type(value)
+
+
+def _build_pk_filters(table, primary_key: dict[str, Any]):
+    filters = []
+    for column in table.primary_key.columns:
+        if column.name not in primary_key:
+            raise ValueError(f"Missing primary key field: {column.name}")
+        filters.append(column == _coerce_table_value(column, primary_key[column.name]))
+    return filters
+
+
+def _admin_manageable_table_names() -> list[str]:
+    return sorted(name for name in _inspector().get_table_names() if not name.startswith("sqlite_"))
 
 
 def _user_key(user_id: str | None = None) -> str:
@@ -445,6 +502,8 @@ def init_db():
     _ensure_column("job_postings", "search_query", "TEXT")
     _ensure_column("job_postings", "updated_at", "TEXT")
     _ensure_column("chat_threads", "thread_type", "TEXT NOT NULL DEFAULT 'job'")
+    _ensure_column("user_profiles", "full_name", "TEXT")
+    _ensure_column("user_profiles", "phone", "TEXT")
 
     now = _utcnow()
     with ENGINE.begin() as conn:
@@ -1248,7 +1307,7 @@ def get_user_profile(user_id: str | None = None):
         result = conn.execute(
             text(
                 """
-                SELECT id, user_id, summary_text, created_at, updated_at
+                SELECT id, user_id, full_name, phone, summary_text, created_at, updated_at
                 FROM user_profiles
                 WHERE user_id = :user_id
                 LIMIT 1
@@ -1262,31 +1321,208 @@ def get_user_profile(user_id: str | None = None):
         return {
             "id": row[0],
             "user_id": row[1],
-            "summary_text": row[2],
-            "created_at": row[3],
-            "updated_at": row[4],
+            "full_name": row[2] or "",
+            "phone": row[3] or "",
+            "summary_text": row[4],
+            "created_at": row[5],
+            "updated_at": row[6],
         }
 
 
-def save_user_profile(summary_text: str, user_id: str | None = None):
+def save_user_profile(
+    summary_text: str,
+    user_id: str | None = None,
+    full_name: str | None = None,
+    phone: str | None = None,
+):
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
     with ENGINE.begin() as conn:
         conn.execute(
             text(
                 """
-                INSERT INTO user_profiles (user_id, summary_text, created_at, updated_at)
-                VALUES (:user_id, :summary_text, :created_at, :updated_at)
+                INSERT INTO user_profiles (user_id, full_name, phone, summary_text, created_at, updated_at)
+                VALUES (:user_id, :full_name, :phone, :summary_text, :created_at, :updated_at)
                 ON CONFLICT(user_id) DO UPDATE SET
+                    full_name = COALESCE(:full_name, user_profiles.full_name),
+                    phone = COALESCE(:phone, user_profiles.phone),
                     summary_text = excluded.summary_text,
                     updated_at = excluded.updated_at
                 """
             ),
             {
                 "user_id": resolved_user_id,
+                "full_name": full_name,
+                "phone": phone,
                 "summary_text": summary_text,
                 "created_at": now,
                 "updated_at": now,
             },
         )
     return get_user_profile(user_id=resolved_user_id)
+
+
+def save_user_account_profile(full_name: str, phone: str, user_id: str | None = None):
+    now = _utcnow()
+    resolved_user_id = _resolve_user_id(user_id)
+    with ENGINE.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO user_profiles (user_id, full_name, phone, summary_text, created_at, updated_at)
+                VALUES (:user_id, :full_name, :phone, '', :created_at, :updated_at)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    full_name = excluded.full_name,
+                    phone = excluded.phone,
+                    updated_at = excluded.updated_at
+                """
+            ),
+            {
+                "user_id": resolved_user_id,
+                "full_name": full_name.strip(),
+                "phone": phone.strip(),
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+    return get_user_profile(user_id=resolved_user_id)
+
+
+def admin_list_tables() -> list[dict[str, Any]]:
+    tables: list[dict[str, Any]] = []
+    for table_name in _admin_manageable_table_names():
+        table = _reflect_table(table_name)
+        with ENGINE.begin() as conn:
+            row_count = conn.execute(select(func.count()).select_from(table)).scalar_one()
+        tables.append(
+            {
+                "name": table_name,
+                "row_count": int(row_count),
+                "primary_key": [column.name for column in table.primary_key.columns],
+                "columns": [
+                    {
+                        "name": column.name,
+                        "type": str(column.type),
+                        "nullable": bool(column.nullable),
+                        "primary_key": bool(column.primary_key),
+                    }
+                    for column in table.columns
+                ],
+            }
+        )
+    return tables
+
+
+def admin_get_table_data(table_name: str, limit: int = 100, offset: int = 0, search: str = "") -> dict[str, Any]:
+    table = _reflect_table(table_name)
+    search_text = search.strip().lower()
+    filters = []
+
+    if search_text:
+        searchable_columns = [column for column in table.columns if not column.primary_key]
+        if searchable_columns:
+            like_value = f"%{search_text}%"
+            filters.append(
+                or_(
+                    *[
+                        func.lower(cast(column, String)).like(like_value)
+                        for column in searchable_columns
+                    ]
+                )
+            )
+
+    stmt = select(table)
+    count_stmt = select(func.count()).select_from(table)
+    for filter_expr in filters:
+        stmt = stmt.where(filter_expr)
+        count_stmt = count_stmt.where(filter_expr)
+
+    order_columns = list(table.primary_key.columns) or list(table.columns[:1])
+    for column in order_columns:
+        stmt = stmt.order_by(column.asc())
+    stmt = stmt.limit(int(limit)).offset(int(offset))
+
+    with ENGINE.begin() as conn:
+        rows = conn.execute(stmt).fetchall()
+        total = conn.execute(count_stmt).scalar_one()
+
+    return {
+        "table": table_name,
+        "primary_key": [column.name for column in table.primary_key.columns],
+        "columns": [
+            {
+                "name": column.name,
+                "type": str(column.type),
+                "nullable": bool(column.nullable),
+                "primary_key": bool(column.primary_key),
+            }
+            for column in table.columns
+        ],
+        "rows": [_serialize_row_mapping(row._mapping) for row in rows],
+        "limit": int(limit),
+        "offset": int(offset),
+        "total": int(total),
+    }
+
+
+def admin_insert_table_row(table_name: str, values: dict[str, Any]) -> dict[str, Any]:
+    table = _reflect_table(table_name)
+    payload = {
+        column.name: _coerce_table_value(column, values[column.name])
+        for column in table.columns
+        if column.name in values
+    }
+    if not payload:
+        raise ValueError("No column values provided")
+
+    with ENGINE.begin() as conn:
+        result = conn.execute(table.insert().values(**payload))
+        primary_key = {
+            column.name: payload.get(column.name)
+            for column in table.primary_key.columns
+        }
+        inserted_pk = result.inserted_primary_key or ()
+        for index, column in enumerate(table.primary_key.columns):
+            if primary_key.get(column.name) is None and index < len(inserted_pk):
+                primary_key[column.name] = inserted_pk[index]
+
+        if table.primary_key.columns:
+            row = conn.execute(select(table).where(*_build_pk_filters(table, primary_key))).fetchone()
+            if row:
+                return _serialize_row_mapping(row._mapping)
+    return payload
+
+
+def admin_update_table_row(table_name: str, primary_key: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
+    table = _reflect_table(table_name)
+    payload = {
+        column.name: _coerce_table_value(column, values[column.name])
+        for column in table.columns
+        if column.name in values and not column.primary_key
+    }
+    if not payload:
+        raise ValueError("No editable column values provided")
+
+    filters = _build_pk_filters(table, primary_key)
+    with ENGINE.begin() as conn:
+        result = conn.execute(table.update().where(*filters).values(**payload))
+        if result.rowcount == 0:
+            raise ValueError("Row not found")
+        row = conn.execute(select(table).where(*filters)).fetchone()
+        if not row:
+            raise ValueError("Failed to reload updated row")
+        return _serialize_row_mapping(row._mapping)
+
+
+def admin_delete_table_row(table_name: str, primary_key: dict[str, Any]) -> dict[str, Any]:
+    table = _reflect_table(table_name)
+    filters = _build_pk_filters(table, primary_key)
+    with ENGINE.begin() as conn:
+        row = conn.execute(select(table).where(*filters)).fetchone()
+        if not row:
+            raise ValueError("Row not found")
+        deleted = _serialize_row_mapping(row._mapping)
+        result = conn.execute(table.delete().where(*filters))
+        if result.rowcount == 0:
+            raise ValueError("Row not found")
+    return deleted
