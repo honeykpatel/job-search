@@ -1,0 +1,37 @@
+#!/bin/sh
+
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+log_file="$repo_root/.git-commit-log.md"
+temp_file="$repo_root/.git-commit-log.tmp"
+
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
+commit_hash="$(git rev-parse --short HEAD)"
+commit_date="$(git log -1 --date=iso-strict --pretty=format:%cd)"
+commit_subject="$(git log -1 --pretty=format:%s)"
+
+entry="## $commit_date
+- Branch: \`$branch\`
+- Commit: \`$commit_hash\`
+- Message: $commit_subject
+
+"
+
+if [ -f "$log_file" ] && grep -Fq -- "- Commit: \`$commit_hash\`" "$log_file"; then
+  exit 0
+fi
+
+{
+  printf '# Git Commit Log\n\nNewest entries are prepended at the top.\n\n'
+  printf '%s' "$entry"
+  if [ -f "$log_file" ]; then
+    tail -n +5 "$log_file"
+  fi
+} > "$temp_file"
+
+mv "$temp_file" "$log_file"
+
+if command -v attrib >/dev/null 2>&1; then
+  attrib +h "$log_file" >/dev/null 2>&1 || true
+fi
