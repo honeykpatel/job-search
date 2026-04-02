@@ -42,8 +42,11 @@ def _build_engine() -> Engine:
     }
     if not DATABASE_URL.startswith("sqlite"):
         # Supabase already provides pooling. Disable SQLAlchemy's pool so this
-        # app does not hold extra idle Postgres connections open.
+        # app does not hold extra idle Postgres connections open. Also disable
+        # psycopg prepared statements because transaction-pooled Postgres can
+        # reuse backend sessions and trip on duplicate prepared statement names.
         engine_kwargs["poolclass"] = NullPool
+        engine_kwargs["connect_args"] = {"prepare_threshold": None}
 
     engine = create_engine(DATABASE_URL, **engine_kwargs)
 
@@ -91,7 +94,7 @@ def _reflect_table(table_name: str):
         raise ValueError(f"Unknown table: {table_name}")
 
     metadata = MetaData()
-    metadata.reflect(bind=ENGINE, only=[table_name])
+    metadata.reflect(bind=ENGINE, only=[table_name], resolve_fks=False)
     return metadata.tables[table_name]
 
 
