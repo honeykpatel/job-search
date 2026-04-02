@@ -20,6 +20,7 @@ async function api(path, options = {}) {
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+      ...(options.adminToken ? { "X-Admin-Token": options.adminToken } : {}),
       ...(options.headers || {}),
     },
     ...options,
@@ -40,7 +41,16 @@ async function api(path, options = {}) {
   return contentType.includes("application/json") ? response.json() : response.text();
 }
 
-function AuthShell({ mode, form, loading, error, onModeChange, onChange, onSubmit }) {
+function AuthShell({
+  mode,
+  form,
+  loading,
+  error,
+  onModeChange,
+  onChange,
+  onSubmit,
+  onOpenAdmin,
+}) {
   return (
     <main className="auth-shell">
       <section className="auth-card">
@@ -82,6 +92,52 @@ function AuthShell({ mode, form, loading, error, onModeChange, onChange, onSubmi
         >
           {mode === "sign-in" ? "Need an account? Sign up" : "Already have an account? Sign in"}
         </button>
+        <button className="action-button subtle" type="button" onClick={onOpenAdmin}>
+          Admin Login
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function AdminAuthShell({ form, loading, error, onChange, onSubmit, onBackToUser }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-card admin-auth-card">
+        <span className="status-pill">Restricted</span>
+        <h1>Admin Access</h1>
+        <p className="muted">
+          Sign in with the admin username and password configured on the backend.
+        </p>
+        <form className="auth-form" onSubmit={onSubmit}>
+          <label className="field">
+            <span>Username</span>
+            <input
+              type="text"
+              value={form.username}
+              onChange={(event) => onChange({ ...form, username: event.target.value })}
+              autoComplete="username"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => onChange({ ...form, password: event.target.value })}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <button className="action-button primary" type="submit" disabled={loading}>
+            {loading ? "Signing in..." : "Admin Login"}
+          </button>
+        </form>
+        {error ? <p className="error-banner auth-error">{error}</p> : null}
+        <button className="action-button subtle" type="button" onClick={onBackToUser}>
+          Back to User Login
+        </button>
       </section>
     </main>
   );
@@ -109,6 +165,15 @@ function emptyProfileForm() {
     constraints: "",
     outreach_style: "",
     extra_context: "",
+  };
+}
+
+function emptyAccountForm() {
+  return {
+    full_name: "",
+    phone: "",
+    password: "",
+    confirmPassword: "",
   };
 }
 
@@ -345,12 +410,16 @@ function MarkdownMessage({ content }) {
 }
 
 export default function App() {
+  const [pathname, setPathname] = useState(() => window.location.pathname || "/");
   const [authMode, setAuthMode] = useState("sign-in");
   const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [adminAuthForm, setAdminAuthForm] = useState({ username: "", password: "" });
   const [authLoading, setAuthLoading] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [adminSubmitting, setAdminSubmitting] = useState(false);
   const [supabaseClient, setSupabaseClient] = useState(null);
   const [session, setSession] = useState(null);
+  const [adminSession, setAdminSession] = useState(null);
   const [authConfigError, setAuthConfigError] = useState("");
   const [page, setPage] = useState("Job Search");
   const [error, setError] = useState("");
@@ -361,8 +430,19 @@ export default function App() {
   const [threads, setThreads] = useState([]);
   const [profile, setProfile] = useState({ summary_text: "" });
   const [profileForm, setProfileForm] = useState(emptyProfileForm());
+  const [accountForm, setAccountForm] = useState(emptyAccountForm());
+  const [savingAccount, setSavingAccount] = useState(false);
   const [pipelineSummary, setPipelineSummary] = useState(null);
   const [sidebarFilter, setSidebarFilter] = useState("");
+  const [adminTables, setAdminTables] = useState([]);
+  const [selectedAdminTable, setSelectedAdminTable] = useState("");
+  const [adminTableData, setAdminTableData] = useState(null);
+  const [adminTableSearch, setAdminTableSearch] = useState("");
+  const [adminTableOffset, setAdminTableOffset] = useState(0);
+  const [adminEditorMode, setAdminEditorMode] = useState(null);
+  const [adminEditorValues, setAdminEditorValues] = useState({});
+  const [adminEditorPrimaryKey, setAdminEditorPrimaryKey] = useState({});
+  const [adminSaving, setAdminSaving] = useState(false);
 
   const [searchForm, setSearchForm] = useState({
     job_title: "",
@@ -405,6 +485,34 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+
+  function navigateTo(nextPath) {
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath);
+    }
+    setPathname(window.location.pathname || nextPath);
+  }
+
+  useEffect(() => {
+    try {
+      const savedAdminSession = window.localStorage.getItem("jobpilot_admin_session");
+      if (savedAdminSession) {
+        setAdminSession(JSON.parse(savedAdminSession));
+      }
+    } catch {
+      window.localStorage.removeItem("jobpilot_admin_session");
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPathname(window.location.pathname || "/");
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -457,6 +565,7 @@ export default function App() {
       setThreads([]);
       setProfile({ summary_text: "" });
       setProfileForm(emptyProfileForm());
+      setAccountForm(emptyAccountForm());
       setPipelineSummary(null);
       setSelectedSessionId(null);
       setSelectedResumeId(null);
@@ -468,6 +577,55 @@ export default function App() {
     }
     void bootstrap(session.access_token);
   }, [session?.access_token]);
+
+  useEffect(() => {
+    if (!adminSession?.token) {
+      setAdminTables([]);
+      setSelectedAdminTable("");
+      setAdminTableData(null);
+      setAdminEditorMode(null);
+      setAdminEditorValues({});
+      setAdminEditorPrimaryKey({});
+      window.localStorage.removeItem("jobpilot_admin_session");
+      if (page === "Admin" && !isAdminRoute) {
+        setPage("Job Search");
+      }
+      return;
+    }
+
+    window.localStorage.setItem("jobpilot_admin_session", JSON.stringify(adminSession));
+    if (!session?.access_token) {
+      setPage("Admin");
+    }
+    void loadAdminTables(adminSession.token);
+  }, [adminSession, isAdminRoute, page, session?.access_token]);
+
+  useEffect(() => {
+    if (isAdminRoute) {
+      if (page !== "Admin") {
+        setPage("Admin");
+      }
+      return;
+    }
+
+    if (page === "Admin" && session?.access_token) {
+      setPage("Job Search");
+    }
+  }, [isAdminRoute, page, session?.access_token]);
+
+  useEffect(() => {
+    if (adminSession?.token && !session?.access_token && !isAdminRoute) {
+      navigateTo("/admin");
+    }
+  }, [adminSession?.token, isAdminRoute, session?.access_token]);
+
+  useEffect(() => {
+    if (!adminSession?.token || !selectedAdminTable) {
+      setAdminTableData(null);
+      return;
+    }
+    void loadAdminTable(selectedAdminTable);
+  }, [adminSession?.token, selectedAdminTable, adminTableOffset]);
 
   useEffect(() => {
     if (!session?.access_token) {
@@ -546,13 +704,14 @@ export default function App() {
   async function bootstrap(accessToken) {
     try {
       setError("");
-      let [sessionData, resumeData, recentJobs, threadData, profileData, pipelineData] = await Promise.all([
+      let [sessionData, resumeData, recentJobs, threadData, profileData, pipelineData, accountData] = await Promise.all([
         api("/api/sessions", { accessToken }),
         api("/api/resumes", { accessToken }),
         api("/api/jobs/recent?limit=200", { accessToken }),
         api("/api/threads", { accessToken }),
         api("/api/profile", { accessToken }),
         api("/api/pipeline-summary", { accessToken }),
+        api("/api/account", { accessToken }),
       ]);
       if (!threadData.some((thread) => thread.thread_type === "general")) {
         const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
@@ -564,6 +723,12 @@ export default function App() {
       setThreads(threadData);
       setProfile(profileData || { summary_text: "" });
       setProfileForm(parseProfileSummary((profileData || {}).summary_text || ""));
+      setAccountForm({
+        full_name: accountData?.full_name || session.user?.user_metadata?.full_name || "",
+        phone: accountData?.phone || session.user?.user_metadata?.phone || "",
+        password: "",
+        confirmPassword: "",
+      });
       setPipelineSummary(pipelineData);
       if (resumeData[0]) {
         setSelectedResumeId(resumeData[0].id);
@@ -579,12 +744,14 @@ export default function App() {
 
   async function refreshCollections() {
     const accessToken = session?.access_token;
-    let [sessionData, resumeData, recentJobs, threadData, pipelineData] = await Promise.all([
+    let [sessionData, resumeData, recentJobs, threadData, pipelineData, profileData, accountData] = await Promise.all([
       api("/api/sessions", { accessToken }),
       api("/api/resumes", { accessToken }),
       api("/api/jobs/recent?limit=200", { accessToken }),
       api("/api/threads", { accessToken }),
       api("/api/pipeline-summary", { accessToken }),
+      api("/api/profile", { accessToken }),
+      api("/api/account", { accessToken }),
     ]);
     if (!threadData.some((thread) => thread.thread_type === "general")) {
       const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
@@ -599,6 +766,15 @@ export default function App() {
     setJobs(recentJobs);
     setThreads(threadData);
     setPipelineSummary(pipelineData);
+    setProfile(profileData || { summary_text: "" });
+    setProfileForm(parseProfileSummary((profileData || {}).summary_text || ""));
+    setAccountForm((current) => ({
+      ...current,
+      full_name: accountData?.full_name || "",
+      phone: accountData?.phone || "",
+      password: "",
+      confirmPassword: "",
+    }));
     setSelectedSessionId(nextSelectedSessionId);
     setSelectedThreadId((current) =>
       current && threadData.some((thread) => thread.id === current) ? current : null
@@ -621,6 +797,50 @@ export default function App() {
       setError("");
       const data = await api(`/api/threads/${threadId}`, { accessToken: session?.access_token });
       setSelectedThread(data);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function loadAdminTables(token = adminSession?.token) {
+    if (!token) {
+      return;
+    }
+    try {
+      setError("");
+      const data = await api("/api/admin/tables", { adminToken: token });
+      setAdminTables(data || []);
+      setSelectedAdminTable((current) => {
+        if (current && data.some((table) => table.name === current)) {
+          return current;
+        }
+        return data[0]?.name || "";
+      });
+    } catch (err) {
+      setError(err.message);
+      if (String(err.message).toLowerCase().includes("admin")) {
+        setAdminSession(null);
+      }
+    }
+  }
+
+  async function loadAdminTable(tableName, nextSearch = adminTableSearch, nextOffset = adminTableOffset) {
+    if (!adminSession?.token || !tableName) {
+      return;
+    }
+    try {
+      setError("");
+      const params = new URLSearchParams({
+        limit: "100",
+        offset: String(nextOffset),
+      });
+      if ((nextSearch || "").trim()) {
+        params.set("search", nextSearch.trim());
+      }
+      const data = await api(`/api/admin/tables/${tableName}?${params.toString()}`, {
+        adminToken: adminSession.token,
+      });
+      setAdminTableData(data);
     } catch (err) {
       setError(err.message);
     }
@@ -731,6 +951,56 @@ export default function App() {
       setNotice("Agent context saved.");
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function handleSaveAccount() {
+    if (!session?.access_token || !supabaseClient) {
+      return;
+    }
+    if (accountForm.password && accountForm.password !== accountForm.confirmPassword) {
+      setError("Password confirmation does not match.");
+      return;
+    }
+
+    try {
+      setSavingAccount(true);
+      setError("");
+      const savedAccount = await api("/api/account", {
+        method: "PUT",
+        body: JSON.stringify({
+          full_name: accountForm.full_name,
+          phone: accountForm.phone,
+        }),
+        accessToken: session.access_token,
+      });
+
+      const updatePayload = {
+        data: {
+          full_name: accountForm.full_name,
+          phone: accountForm.phone,
+        },
+      };
+      if (accountForm.password) {
+        updatePayload.password = accountForm.password;
+      }
+
+      const { error: updateError } = await supabaseClient.auth.updateUser(updatePayload);
+      if (updateError) {
+        throw updateError;
+      }
+
+      setAccountForm({
+        full_name: savedAccount.full_name || "",
+        phone: savedAccount.phone || "",
+        password: "",
+        confirmPassword: "",
+      });
+      setNotice("Account settings updated.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingAccount(false);
     }
   }
 
@@ -900,6 +1170,111 @@ export default function App() {
       setError(err.message);
     } finally {
       setSavingApplication(false);
+    }
+  }
+
+  function handleAdminCreateRow() {
+    if (!adminTableData) {
+      return;
+    }
+    const nextValues = {};
+    adminTableData.columns.forEach((column) => {
+      nextValues[column.name] = "";
+    });
+    setAdminEditorMode("create");
+    setAdminEditorPrimaryKey({});
+    setAdminEditorValues(nextValues);
+  }
+
+  function handleAdminEditRow(row) {
+    if (!adminTableData) {
+      return;
+    }
+    const nextValues = {};
+    const nextPrimaryKey = {};
+    adminTableData.columns.forEach((column) => {
+      const rawValue = row[column.name];
+      const normalized = rawValue === null || rawValue === undefined ? "" : String(rawValue);
+      nextValues[column.name] = normalized;
+      if (column.primary_key) {
+        nextPrimaryKey[column.name] = rawValue;
+      }
+    });
+    setAdminEditorMode("edit");
+    setAdminEditorPrimaryKey(nextPrimaryKey);
+    setAdminEditorValues(nextValues);
+  }
+
+  async function handleAdminDeleteRow(row) {
+    if (!adminSession?.token || !adminTableData) {
+      return;
+    }
+    const primaryKey = {};
+    adminTableData.columns
+      .filter((column) => column.primary_key)
+      .forEach((column) => {
+        primaryKey[column.name] = row[column.name];
+      });
+
+    const confirmed = window.confirm(`Delete this row from ${adminTableData.table}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setAdminSaving(true);
+      setError("");
+      await api(`/api/admin/tables/${adminTableData.table}/rows`, {
+        method: "DELETE",
+        body: JSON.stringify({ primary_key: primaryKey }),
+        adminToken: adminSession.token,
+      });
+      setNotice(`Deleted row from ${adminTableData.table}.`);
+      await loadAdminTable(adminTableData.table);
+      await loadAdminTables(adminSession.token);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAdminSaving(false);
+    }
+  }
+
+  async function handleAdminSaveRow() {
+    if (!adminSession?.token || !adminTableData || !adminEditorMode) {
+      return;
+    }
+
+    try {
+      setAdminSaving(true);
+      setError("");
+      const payload = { values: adminEditorValues };
+      if (adminEditorMode === "edit") {
+        await api(`/api/admin/tables/${adminTableData.table}/rows`, {
+          method: "PUT",
+          body: JSON.stringify({
+            primary_key: adminEditorPrimaryKey,
+            values: adminEditorValues,
+          }),
+          adminToken: adminSession.token,
+        });
+        setNotice(`Updated row in ${adminTableData.table}.`);
+      } else {
+        await api(`/api/admin/tables/${adminTableData.table}/rows`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+          adminToken: adminSession.token,
+        });
+        setNotice(`Inserted row into ${adminTableData.table}.`);
+      }
+      setAdminEditorMode(null);
+      setAdminEditorPrimaryKey({});
+      setAdminEditorValues({});
+      await loadAdminTable(adminTableData.table);
+      await loadAdminTables(adminSession.token);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAdminSaving(false);
     }
   }
 
@@ -1134,6 +1509,7 @@ export default function App() {
   async function handleAuthSubmit(event) {
     event.preventDefault();
     if (!supabaseClient) {
+      setError(authConfigError || "User authentication is not configured.");
       return;
     }
 
@@ -1168,6 +1544,31 @@ export default function App() {
     }
   }
 
+  async function handleAdminAuthSubmit(event) {
+    event.preventDefault();
+    try {
+      setAdminSubmitting(true);
+      setError("");
+      setNotice("");
+      const nextAdminSession = await api("/api/admin/login", {
+        method: "POST",
+        body: JSON.stringify({
+          username: adminAuthForm.username,
+          password: adminAuthForm.password,
+        }),
+      });
+      setAdminSession(nextAdminSession);
+      setAdminAuthForm({ username: nextAdminSession.username || adminAuthForm.username, password: "" });
+      navigateTo("/admin");
+      setPage("Admin");
+      setNotice("Admin session started.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAdminSubmitting(false);
+    }
+  }
+
   async function handleSignOut() {
     if (!supabaseClient) {
       return;
@@ -1181,22 +1582,30 @@ export default function App() {
     }
   }
 
+  function handleAdminSignOut() {
+    setAdminSession(null);
+    setAdminAuthForm({ username: "", password: "" });
+    setNotice("Admin session ended.");
+  }
+
   if (authLoading) {
     return <main className="auth-shell"><section className="auth-card"><p>Loading authentication…</p></section></main>;
   }
 
-  if (!supabaseClient || authConfigError) {
+  if (isAdminRoute && !adminSession?.token) {
     return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <h1>Job Pilot</h1>
-          <p className="error-banner auth-error">{authConfigError || "Authentication is not configured."}</p>
-        </section>
-      </main>
+      <AdminAuthShell
+        form={adminAuthForm}
+        loading={adminSubmitting}
+        error={error}
+        onChange={setAdminAuthForm}
+        onSubmit={handleAdminAuthSubmit}
+        onBackToUser={() => navigateTo("/")}
+      />
     );
   }
 
-  if (!session?.access_token) {
+  if (!isAdminRoute && !session?.access_token && !adminSession?.token) {
     return (
       <AuthShell
         mode={authMode}
@@ -1206,9 +1615,14 @@ export default function App() {
         onModeChange={setAuthMode}
         onChange={setAuthForm}
         onSubmit={handleAuthSubmit}
+        onOpenAdmin={() => navigateTo("/admin")}
       />
     );
   }
+
+  const navPages = session?.access_token
+    ? [...PAGES, ...(adminSession?.token ? ["Admin"] : [])]
+    : ["Admin"];
 
   return (
     <div className="shell">
@@ -1221,7 +1635,49 @@ export default function App() {
           </div>
         </div>
         <section className="sidebar-card sidebar-panel">
-          {page === "Profile" ? (
+          {page === "Admin" ? (
+            <>
+              <div className="sidebar-section-head">
+                <div>
+                  <p className="eyebrow">Database Control</p>
+                  <h3>Admin</h3>
+                </div>
+                <span className="sidebar-chip">Restricted</span>
+              </div>
+              <div className="sidebar-note">
+                Browse tables, inspect rows, and insert, update, or delete database records without writing SQL.
+              </div>
+              <div className="sidebar-inline-section">
+                <span className="sidebar-group-label">Tables</span>
+                <button className="action-button primary sidebar-action" type="button" onClick={handleAdminCreateRow} disabled={!selectedAdminTable}>
+                  New Row
+                </button>
+              </div>
+              <div className="sidebar-list">
+                {adminTables.length ? (
+                  adminTables.map((table) => (
+                    <button
+                      key={table.name}
+                      type="button"
+                      className={`mini-button sidebar-item ${selectedAdminTable === table.name ? "active" : ""}`}
+                      onClick={() => {
+                        setSelectedAdminTable(table.name);
+                        setAdminTableOffset(0);
+                        setAdminEditorMode(null);
+                      }}
+                    >
+                      <span className="sidebar-item-title">{table.name}</span>
+                      <span className="sidebar-item-meta">
+                        <span className="sidebar-type-badge status">{table.row_count} rows</span>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="sidebar-empty">No tables available.</p>
+                )}
+              </div>
+            </>
+          ) : page === "Profile" ? (
             <>
               <div className="sidebar-section-head">
                 <div>
@@ -1454,22 +1910,34 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-title">
             <h1>Job Pilot</h1>
-            <p className="muted topbar-user">{session.user?.email || "Signed in"}</p>
+            <p className="muted topbar-user">
+              {session?.user?.email || (adminSession?.username ? `Admin: ${adminSession.username}` : "Signed in")}
+            </p>
           </div>
           <nav className="topbar-nav">
-            {PAGES.map((item) => (
+            {navPages.map((item) => (
               <button
                 key={item}
                 className={`nav-button topbar-nav-button ${item === page ? "active" : ""}`}
-                onClick={() => setPage(item)}
+                onClick={() => {
+                  setPage(item);
+                  navigateTo(item === "Admin" ? "/admin" : "/");
+                }}
                 type="button"
               >
                 {item}
               </button>
             ))}
-            <button className="action-button subtle topbar-signout" type="button" onClick={handleSignOut}>
-              Sign Out
-            </button>
+            {adminSession?.token ? (
+              <button className="action-button subtle topbar-signout" type="button" onClick={handleAdminSignOut}>
+                Admin Out
+              </button>
+            ) : null}
+            {session?.access_token ? (
+              <button className="action-button subtle topbar-signout" type="button" onClick={handleSignOut}>
+                Sign Out
+              </button>
+            ) : null}
           </nav>
         </header>
 
@@ -1506,7 +1974,7 @@ export default function App() {
             <div className="panel job-detail-panel">
               <div className="section-heading">
                 <h3>Job Details</h3>
-                <p>{selectedSessionJob ? `${selectedSessionJob.title || "Untitled"} @ ${selectedSessionJob.company || "Unknown company"}` : "Select a job from the left card."}</p>
+                <p>{selectedSessionJob ? `${selectedSessionJob.title || "Untitled"} @ ${selectedSessionJob.company || "Unknown company"}` : "Select a job from the left list."}</p>
               </div>
               {selectedSessionJob ? (
                 <div className="stack">
@@ -1789,13 +2257,61 @@ export default function App() {
           <section className="grid profile-layout">
             <div className="panel span-two profile-intro-panel">
               <div className="section-heading">
-                <h3>Agent Profile</h3>
-                <p>Fill this once and keep it updated. Agent uses it as your standing context across all conversations.</p>
+                <h3>Profile and Account</h3>
+                <p>Update your account details here, then keep the Agent context below aligned with your current search.</p>
               </div>
               <div className="meta-row">
-                <span className="status-pill">Persistent user context</span>
-                <span className="status-pill">Separate from jobs and applications</span>
+                <span className="status-pill">User-managed account details</span>
+                <span className="status-pill">Persistent agent context</span>
               </div>
+            </div>
+
+            <div className="panel span-two">
+              <div className="section-heading">
+                <h3>Account Settings</h3>
+                <p>Users can change their name, phone number, and password from this screen.</p>
+              </div>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>Full name</span>
+                  <input
+                    value={accountForm.full_name}
+                    onChange={(event) => setAccountForm({ ...accountForm, full_name: event.target.value })}
+                    placeholder="Your name"
+                  />
+                </label>
+                <label className="field">
+                  <span>Phone number</span>
+                  <input
+                    value={accountForm.phone}
+                    onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value })}
+                    placeholder="+1 555 123 4567"
+                  />
+                </label>
+              </div>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>New password</span>
+                  <input
+                    type="password"
+                    value={accountForm.password}
+                    onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })}
+                    placeholder="Leave blank to keep the current password"
+                  />
+                </label>
+                <label className="field">
+                  <span>Confirm password</span>
+                  <input
+                    type="password"
+                    value={accountForm.confirmPassword}
+                    onChange={(event) => setAccountForm({ ...accountForm, confirmPassword: event.target.value })}
+                    placeholder="Repeat the new password"
+                  />
+                </label>
+              </div>
+              <button className="action-button primary" type="button" onClick={handleSaveAccount} disabled={savingAccount}>
+                {savingAccount ? "Saving..." : "Save Account"}
+              </button>
             </div>
 
             <div className="panel">
@@ -1904,6 +2420,155 @@ export default function App() {
               <button className="action-button primary" type="button" onClick={handleSaveProfile}>
                 Save Profile
               </button>
+            </div>
+          </section>
+        ) : null}
+
+        {page === "Admin" ? (
+          <section className="grid two-up admin-layout">
+            <div className="panel">
+              <div className="section-heading">
+                <h3>Table Browser</h3>
+                <p>
+                  {adminTableData
+                    ? `${adminTableData.table} | ${adminTableData.total} rows`
+                    : "Select a table from the sidebar."}
+                </p>
+              </div>
+              {adminSession?.token ? (
+                <>
+                  <div className="inline-fields">
+                    <label className="field">
+                      <span>Search rows</span>
+                      <input
+                        value={adminTableSearch}
+                        onChange={(event) => setAdminTableSearch(event.target.value)}
+                        placeholder="Search across row values"
+                      />
+                    </label>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => {
+                        setAdminTableOffset(0);
+                        void loadAdminTable(selectedAdminTable, adminTableSearch, 0);
+                      }}
+                      disabled={!selectedAdminTable}
+                    >
+                      Search
+                    </button>
+                  </div>
+                  {adminTableData?.rows?.length ? (
+                    <div className="admin-table-wrap">
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            {adminTableData.columns.map((column) => (
+                              <th key={column.name}>{column.name}</th>
+                            ))}
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adminTableData.rows.map((row, index) => (
+                            <tr key={`${adminTableData.table}-${index}`}>
+                              {adminTableData.columns.map((column) => (
+                                <td key={`${index}-${column.name}`}>{String(row[column.name] ?? "")}</td>
+                              ))}
+                              <td className="admin-row-actions">
+                                <button className="mini-button" type="button" onClick={() => handleAdminEditRow(row)}>
+                                  Edit
+                                </button>
+                                <button className="mini-button destructive" type="button" onClick={() => void handleAdminDeleteRow(row)}>
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="muted">No rows returned for the current table and filter.</p>
+                  )}
+                  {adminTableData ? (
+                    <div className="admin-pagination">
+                      <button
+                        className="action-button subtle"
+                        type="button"
+                        onClick={() => setAdminTableOffset((current) => Math.max(current - adminTableData.limit, 0))}
+                        disabled={adminTableOffset === 0}
+                      >
+                        Previous
+                      </button>
+                      <span className="tiny">
+                        {adminTableOffset + 1} - {Math.min(adminTableOffset + adminTableData.limit, adminTableData.total)} of {adminTableData.total}
+                      </span>
+                      <button
+                        className="action-button subtle"
+                        type="button"
+                        onClick={() => setAdminTableOffset((current) => current + adminTableData.limit)}
+                        disabled={adminTableOffset + adminTableData.limit >= adminTableData.total}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <p className="muted">Sign in as admin to manage database rows.</p>
+              )}
+            </div>
+
+            <div className="panel">
+              <div className="section-heading">
+                <h3>{adminEditorMode === "edit" ? "Edit Row" : adminEditorMode === "create" ? "New Row" : "Row Editor"}</h3>
+                <p>
+                  {adminEditorMode
+                    ? "Update field values and save."
+                    : "Choose a row to edit or use New Row from the sidebar."}
+                </p>
+              </div>
+              {adminEditorMode && adminTableData ? (
+                <>
+                  {adminTableData.columns.map((column) => {
+                    const isPrimaryKey = Boolean(column.primary_key);
+                    const isDisabled = adminEditorMode === "edit" && isPrimaryKey;
+                    return (
+                      <label key={column.name} className="field">
+                        <span>
+                          {column.name}
+                          {isPrimaryKey ? " (pk)" : ""}
+                        </span>
+                        <textarea
+                          rows="2"
+                          value={adminEditorValues[column.name] ?? ""}
+                          disabled={isDisabled}
+                          onChange={(event) =>
+                            setAdminEditorValues((current) => ({
+                              ...current,
+                              [column.name]: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    );
+                  })}
+                  <div className="modal-actions">
+                    <button className="action-button subtle" type="button" onClick={() => setAdminEditorMode(null)}>
+                      Cancel
+                    </button>
+                    <button className="action-button primary" type="button" onClick={() => void handleAdminSaveRow()} disabled={adminSaving}>
+                      {adminSaving ? "Saving..." : adminEditorMode === "edit" ? "Save Changes" : "Insert Row"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="sidebar-note-card">
+                  <span className="sidebar-type-badge status">Admin</span>
+                  <p className="muted">The editor is schema-driven, so it works across every database table exposed by the backend.</p>
+                </div>
+              )}
             </div>
           </section>
         ) : null}
