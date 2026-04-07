@@ -15,6 +15,48 @@ from utils.company_inference import ensure_job_company
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "jobs.db"
 DEFAULT_LOCAL_USER_ID = "__local_single_user__"
+ADMIN_TABLE_RULES: dict[str, dict[str, Any]] = {
+    "search_sessions": {
+        "editable": {"job_title", "location", "work_style", "k"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "job_postings": {
+        "editable": {"title", "company", "location", "source", "description", "job_type", "salary_text", "search_query"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "resumes": {
+        "editable": {"filename", "text"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "applications": {
+        "editable": {"status", "notes"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "chat_threads": {
+        "editable": {"title", "thread_type"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "chat_messages": {
+        "editable": {"role", "content"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "user_profiles": {
+        "editable": {"full_name", "phone", "summary_text"},
+        "creatable": set(),
+        "deletable": True,
+    },
+    "session_jobs": {
+        "editable": set(),
+        "creatable": set(),
+        "deletable": True,
+    },
+}
 
 
 def _default_database_url() -> str:
@@ -150,6 +192,25 @@ def _build_pk_filters(table, primary_key: dict[str, Any]):
 
 def _admin_manageable_table_names() -> list[str]:
     return sorted(name for name in _inspector().get_table_names() if not name.startswith("sqlite_"))
+
+
+def _admin_rules_for_table(table_name: str) -> dict[str, Any]:
+    rules = ADMIN_TABLE_RULES.get(table_name, {})
+    editable = set(rules.get("editable", set()))
+    creatable = set(rules.get("creatable", set()))
+    return {
+        "editable": editable,
+        "creatable": creatable,
+        "deletable": bool(rules.get("deletable", True)),
+    }
+
+
+def _admin_validate_allowed_columns(table_name: str, values: dict[str, Any], allowed_columns: set[str], operation: str) -> None:
+    disallowed = sorted(key for key in values if key not in allowed_columns)
+    if disallowed:
+        raise ValueError(
+            f"{operation} is not allowed for columns: {', '.join(disallowed)}"
+        )
 
 
 def _user_key(user_id: str | None = None) -> str:
@@ -1395,6 +1456,7 @@ def admin_list_tables() -> list[dict[str, Any]]:
     tables: list[dict[str, Any]] = []
     for table_name in _admin_manageable_table_names():
         table = _reflect_table(table_name)
+        rules = _admin_rules_for_table(table_name)
         with ENGINE.begin() as conn:
             row_count = conn.execute(select(func.count()).select_from(table)).scalar_one()
         tables.append(
@@ -1402,12 +1464,21 @@ def admin_list_tables() -> list[dict[str, Any]]:
                 "name": table_name,
                 "row_count": int(row_count),
                 "primary_key": [column.name for column in table.primary_key.columns],
+                "permissions": {
+                    "can_create": bool(rules["creatable"]),
+                    "can_update": bool(rules["editable"]),
+                    "can_delete": bool(rules["deletable"]),
+                    "creatable_columns": sorted(rules["creatable"]),
+                    "editable_columns": sorted(rules["editable"]),
+                },
                 "columns": [
                     {
                         "name": column.name,
                         "type": str(column.type),
                         "nullable": bool(column.nullable),
                         "primary_key": bool(column.primary_key),
+                        "editable": column.name in rules["editable"] and not bool(column.primary_key),
+                        "creatable": column.name in rules["creatable"],
                     }
                     for column in table.columns
                 ],
@@ -1418,6 +1489,7 @@ def admin_list_tables() -> list[dict[str, Any]]:
 
 def admin_get_table_data(table_name: str, limit: int = 100, offset: int = 0, search: str = "") -> dict[str, Any]:
     table = _reflect_table(table_name)
+    rules = _admin_rules_for_table(table_name)
     search_text = search.strip().lower()
     filters = []
 
@@ -1452,12 +1524,21 @@ def admin_get_table_data(table_name: str, limit: int = 100, offset: int = 0, sea
     return {
         "table": table_name,
         "primary_key": [column.name for column in table.primary_key.columns],
+        "permissions": {
+            "can_create": bool(rules["creatable"]),
+            "can_update": bool(rules["editable"]),
+            "can_delete": bool(rules["deletable"]),
+            "creatable_columns": sorted(rules["creatable"]),
+            "editable_columns": sorted(rules["editable"]),
+        },
         "columns": [
             {
                 "name": column.name,
                 "type": str(column.type),
                 "nullable": bool(column.nullable),
                 "primary_key": bool(column.primary_key),
+                "editable": column.name in rules["editable"] and not bool(column.primary_key),
+                "creatable": column.name in rules["creatable"],
             }
             for column in table.columns
         ],
@@ -1470,10 +1551,14 @@ def admin_get_table_data(table_name: str, limit: int = 100, offset: int = 0, sea
 
 def admin_insert_table_row(table_name: str, values: dict[str, Any]) -> dict[str, Any]:
     table = _reflect_table(table_name)
+    rules = _admin_rules_for_table(table_name)
+    if not rules["creatable"]:
+        raise ValueError(f"Direct row creation is disabled for {table_name}")
+    _admin_validate_allowed_columns(table_name, values, rules["creatable"], "Create")
     payload = {
         column.name: _coerce_table_value(column, values[column.name])
         for column in table.columns
-        if column.name in values
+        if column.name in values and column.name in rules["creatable"]
     }
     if not payload:
         raise ValueError("No column values provided")
@@ -1498,10 +1583,14 @@ def admin_insert_table_row(table_name: str, values: dict[str, Any]) -> dict[str,
 
 def admin_update_table_row(table_name: str, primary_key: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
     table = _reflect_table(table_name)
+    rules = _admin_rules_for_table(table_name)
+    if not rules["editable"]:
+        raise ValueError(f"Direct row editing is disabled for {table_name}")
+    _admin_validate_allowed_columns(table_name, values, rules["editable"], "Update")
     payload = {
         column.name: _coerce_table_value(column, values[column.name])
         for column in table.columns
-        if column.name in values and not column.primary_key
+        if column.name in values and column.name in rules["editable"] and not column.primary_key
     }
     if not payload:
         raise ValueError("No editable column values provided")
@@ -1519,6 +1608,9 @@ def admin_update_table_row(table_name: str, primary_key: dict[str, Any], values:
 
 def admin_delete_table_row(table_name: str, primary_key: dict[str, Any]) -> dict[str, Any]:
     table = _reflect_table(table_name)
+    rules = _admin_rules_for_table(table_name)
+    if not rules["deletable"]:
+        raise ValueError(f"Delete is disabled for {table_name}")
     filters = _build_pk_filters(table, primary_key)
     with ENGINE.begin() as conn:
         row = conn.execute(select(table).where(*filters)).fetchone()

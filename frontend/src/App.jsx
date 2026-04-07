@@ -1188,13 +1188,17 @@ export default function App() {
   }
 
   function handleAdminCreateRow() {
-    if (!adminTableData) {
+    if (!adminTableData?.permissions?.can_create) {
+      setNotice("");
+      setError(adminTableData ? `Direct row creation is disabled for ${adminTableData.table}.` : "Select a table first.");
       return;
     }
     const nextValues = {};
-    adminTableData.columns.forEach((column) => {
+    adminTableData.columns
+      .filter((column) => column.creatable)
+      .forEach((column) => {
       nextValues[column.name] = "";
-    });
+      });
     setAdminEditorMode("create");
     setAdminEditorPrimaryKey({});
     setAdminEditorValues(nextValues);
@@ -1289,7 +1293,11 @@ export default function App() {
           method: "PUT",
           body: JSON.stringify({
             primary_key: adminEditorPrimaryKey,
-            values: adminEditorValues,
+            values: Object.fromEntries(
+              Object.entries(adminEditorValues).filter(([key]) =>
+                adminTableData.columns.some((column) => column.name === key && column.editable)
+              )
+            ),
           }),
           adminToken: adminSession.token,
         });
@@ -1297,7 +1305,13 @@ export default function App() {
       } else {
         await api(`/api/admin/tables/${adminTableData.table}/rows`, {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            values: Object.fromEntries(
+              Object.entries(payload.values).filter(([key]) =>
+                adminTableData.columns.some((column) => column.name === key && column.creatable)
+              )
+            ),
+          }),
           adminToken: adminSession.token,
         });
         setNotice(`Inserted row into ${adminTableData.table}.`);
@@ -1685,7 +1699,12 @@ export default function App() {
               </div>
               <div className="sidebar-inline-section">
                 <span className="sidebar-group-label">Tables</span>
-                <button className="action-button primary sidebar-action" type="button" onClick={handleAdminCreateRow} disabled={!selectedAdminTable}>
+                <button
+                  className="action-button primary sidebar-action"
+                  type="button"
+                  onClick={handleAdminCreateRow}
+                  disabled={!selectedAdminTable || !adminTableData?.permissions?.can_create}
+                >
                   New Row
                 </button>
               </div>
@@ -2493,7 +2512,12 @@ export default function App() {
                     >
                       Search
                     </button>
-                    <button className="action-button" type="button" onClick={handleAdminCreateRow} disabled={!selectedAdminTable}>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={handleAdminCreateRow}
+                      disabled={!selectedAdminTable || !adminTableData?.permissions?.can_create}
+                    >
                       New Row
                     </button>
                     <button
@@ -2538,6 +2562,7 @@ export default function App() {
                                     event.stopPropagation();
                                     handleAdminEditRow(row);
                                   }}
+                                  disabled={!adminTableData.permissions?.can_update}
                                 >
                                   Edit
                                 </button>
@@ -2548,6 +2573,7 @@ export default function App() {
                                     event.stopPropagation();
                                     void handleAdminDeleteRow(row);
                                   }}
+                                  disabled={!adminTableData.permissions?.can_delete}
                                 >
                                   Delete
                                 </button>
@@ -2604,7 +2630,16 @@ export default function App() {
                     <button className="action-button subtle" type="button" onClick={() => setAdminEditorMode(null)}>
                       Cancel
                     </button>
-                    <button className="action-button primary" type="button" onClick={() => void handleAdminSaveRow()} disabled={adminSaving}>
+                    <button
+                      className="action-button primary"
+                      type="button"
+                      onClick={() => void handleAdminSaveRow()}
+                      disabled={
+                        adminSaving ||
+                        (adminEditorMode === "edit" && !adminTableData.permissions?.can_update) ||
+                        (adminEditorMode === "create" && !adminTableData.permissions?.can_create)
+                      }
+                    >
                       {adminSaving ? "Saving..." : adminEditorMode === "edit" ? "Save Changes" : "Insert Row"}
                     </button>
                   </div>
@@ -2614,13 +2649,20 @@ export default function App() {
                 <>
                   <div className="admin-editor-grid">
                     {adminTableData.columns.map((column) => {
+                      if (adminEditorMode === "create" && !column.creatable) {
+                        return null;
+                      }
                       const isPrimaryKey = Boolean(column.primary_key);
-                      const isDisabled = adminEditorMode === "edit" && isPrimaryKey;
+                      const isDisabled =
+                        (adminEditorMode === "edit" && (!column.editable || isPrimaryKey)) ||
+                        (adminEditorMode === "create" && !column.creatable);
                       return (
                         <label key={column.name} className={`field admin-editor-field ${isPrimaryKey ? "pk" : ""}`}>
                           <span>
                             {column.name}
                             {isPrimaryKey ? " (pk)" : ""}
+                            {!isPrimaryKey && adminEditorMode === "edit" && !column.editable ? " (locked)" : ""}
+                            {adminEditorMode === "create" && !column.creatable ? " (blocked)" : ""}
                           </span>
                           <textarea
                             rows="2"
@@ -2649,7 +2691,7 @@ export default function App() {
                             )
                           )
                         }
-                        disabled={adminSaving}
+                        disabled={adminSaving || !adminTableData.permissions?.can_delete}
                       >
                         Delete Row
                       </button>
@@ -2659,7 +2701,7 @@ export default function App() {
               ) : (
                 <div className="sidebar-note-card">
                   <span className="sidebar-type-badge status">Admin</span>
-                  <p className="muted">Click any row to edit it. Use New Row to insert records. Delete is available both in the table and inside the editor.</p>
+                  <p className="muted">Protected fields are locked server-side. Only safe content fields can be edited, and row creation is disabled for tables that would require risky identity or relationship fields.</p>
                 </div>
               )}
             </div>
