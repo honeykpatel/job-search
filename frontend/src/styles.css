@@ -563,6 +563,16 @@ textarea {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.action-button.destructive {
+  background: rgba(207, 65, 70, 0.1);
+  color: var(--danger);
+  border-color: rgba(207, 65, 70, 0.24);
+}
+
+.action-button.destructive:hover {
+  background: rgba(207, 65, 70, 0.16);
+}
+
 .sidebar-action {
   width: 100%;
   justify-content: center;
@@ -1157,18 +1167,37 @@ textarea {
 
 .admin-layout {
   align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+.admin-table-panel,
+.admin-editor-panel {
+  width: 100%;
+}
+
+.admin-table-panel {
+  gap: 18px;
+}
+
+.admin-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: end;
 }
 
 .admin-table-wrap {
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: 18px;
   background: var(--bg-elevated);
+  width: 100%;
 }
 
 .admin-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 1100px;
   border-collapse: collapse;
 }
 
@@ -1186,10 +1215,64 @@ textarea {
   background: var(--bg-muted);
 }
 
+.admin-table tbody tr {
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.admin-table tbody tr:hover {
+  background: rgba(15, 15, 16, 0.03);
+}
+
+.admin-table tbody tr.active {
+  background: rgba(16, 163, 127, 0.08);
+}
+
+.admin-cell {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .admin-row-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 130px;
+}
+
+.admin-editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.admin-editor-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-editor-field {
+  min-width: 0;
+}
+
+.admin-editor-field.pk textarea {
+  background: rgba(15, 15, 16, 0.03);
+}
+
+.admin-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
 }
 
 .admin-pagination {
@@ -1198,6 +1281,10 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   margin-top: 14px;
+}
+
+.admin-editor-panel .field textarea {
+  min-height: 92px;
 }
 
 .auth-shell {
@@ -1274,6 +1361,11 @@ textarea {
     height: auto;
     max-height: none;
     min-height: 70vh;
+  }
+
+  .admin-toolbar,
+  .admin-editor-grid {
+    grid-template-columns: 1fr;
   }
 
   .job-session-list-panel,

@@ -409,6 +409,20 @@ function MarkdownMessage({ content }) {
   );
 }
 
+function formatAdminCellValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname || "/");
   const [authMode, setAuthMode] = useState("sign-in");
@@ -1205,6 +1219,23 @@ export default function App() {
     setAdminEditorValues(nextValues);
   }
 
+  function adminRowMatchesSelection(row) {
+    if (!adminTableData || !Object.keys(adminEditorPrimaryKey).length) {
+      return false;
+    }
+    return adminTableData.columns
+      .filter((column) => column.primary_key)
+      .every((column) => row[column.name] === adminEditorPrimaryKey[column.name]);
+  }
+
+  function adminSelectionLabel() {
+    const entries = Object.entries(adminEditorPrimaryKey || {});
+    if (!entries.length) {
+      return adminEditorMode === "create" ? "New row" : "No row selected";
+    }
+    return entries.map(([key, value]) => `${key}=${formatAdminCellValue(value)}`).join(" | ");
+  }
+
   async function handleAdminDeleteRow(row) {
     if (!adminSession?.token || !adminTableData) {
       return;
@@ -1230,6 +1261,11 @@ export default function App() {
         adminToken: adminSession.token,
       });
       setNotice(`Deleted row from ${adminTableData.table}.`);
+      if (adminRowMatchesSelection(row)) {
+        setAdminEditorMode(null);
+        setAdminEditorPrimaryKey({});
+        setAdminEditorValues({});
+      }
       await loadAdminTable(adminTableData.table);
       await loadAdminTables(adminSession.token);
     } catch (err) {
@@ -2425,8 +2461,8 @@ export default function App() {
         ) : null}
 
         {page === "Admin" ? (
-          <section className="grid two-up admin-layout">
-            <div className="panel">
+          <section className="grid admin-layout">
+            <div className="panel admin-table-panel">
               <div className="section-heading">
                 <h3>Table Browser</h3>
                 <p>
@@ -2436,8 +2472,8 @@ export default function App() {
                 </p>
               </div>
               {adminSession?.token ? (
-                <>
-                  <div className="inline-fields">
+        <>
+                  <div className="admin-toolbar">
                     <label className="field">
                       <span>Search rows</span>
                       <input
@@ -2457,6 +2493,17 @@ export default function App() {
                     >
                       Search
                     </button>
+                    <button className="action-button" type="button" onClick={handleAdminCreateRow} disabled={!selectedAdminTable}>
+                      New Row
+                    </button>
+                    <button
+                      className="action-button subtle"
+                      type="button"
+                      onClick={() => void loadAdminTable(selectedAdminTable, adminTableSearch, adminTableOffset)}
+                      disabled={!selectedAdminTable}
+                    >
+                      Refresh
+                    </button>
                   </div>
                   {adminTableData?.rows?.length ? (
                     <div className="admin-table-wrap">
@@ -2471,15 +2518,37 @@ export default function App() {
                         </thead>
                         <tbody>
                           {adminTableData.rows.map((row, index) => (
-                            <tr key={`${adminTableData.table}-${index}`}>
+                            <tr
+                              key={`${adminTableData.table}-${index}`}
+                              className={adminRowMatchesSelection(row) ? "active" : ""}
+                              onClick={() => handleAdminEditRow(row)}
+                            >
                               {adminTableData.columns.map((column) => (
-                                <td key={`${index}-${column.name}`}>{String(row[column.name] ?? "")}</td>
+                                <td key={`${index}-${column.name}`}>
+                                  <div className="admin-cell" title={formatAdminCellValue(row[column.name])}>
+                                    {formatAdminCellValue(row[column.name])}
+                                  </div>
+                                </td>
                               ))}
                               <td className="admin-row-actions">
-                                <button className="mini-button" type="button" onClick={() => handleAdminEditRow(row)}>
+                                <button
+                                  className="mini-button"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleAdminEditRow(row);
+                                  }}
+                                >
                                   Edit
                                 </button>
-                                <button className="mini-button destructive" type="button" onClick={() => void handleAdminDeleteRow(row)}>
+                                <button
+                                  className="mini-button destructive"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleAdminDeleteRow(row);
+                                  }}
+                                >
                                   Delete
                                 </button>
                               </td>
@@ -2520,41 +2589,18 @@ export default function App() {
               )}
             </div>
 
-            <div className="panel">
-              <div className="section-heading">
-                <h3>{adminEditorMode === "edit" ? "Edit Row" : adminEditorMode === "create" ? "New Row" : "Row Editor"}</h3>
-                <p>
-                  {adminEditorMode
-                    ? "Update field values and save."
-                    : "Choose a row to edit or use New Row from the sidebar."}
-                </p>
-              </div>
-              {adminEditorMode && adminTableData ? (
-                <>
-                  {adminTableData.columns.map((column) => {
-                    const isPrimaryKey = Boolean(column.primary_key);
-                    const isDisabled = adminEditorMode === "edit" && isPrimaryKey;
-                    return (
-                      <label key={column.name} className="field">
-                        <span>
-                          {column.name}
-                          {isPrimaryKey ? " (pk)" : ""}
-                        </span>
-                        <textarea
-                          rows="2"
-                          value={adminEditorValues[column.name] ?? ""}
-                          disabled={isDisabled}
-                          onChange={(event) =>
-                            setAdminEditorValues((current) => ({
-                              ...current,
-                              [column.name]: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    );
-                  })}
-                  <div className="modal-actions">
+            <div className="panel admin-editor-panel">
+              <div className="admin-editor-head">
+                <div className="section-heading">
+                  <h3>{adminEditorMode === "edit" ? "Edit Row" : adminEditorMode === "create" ? "New Row" : "Row Editor"}</h3>
+                  <p>
+                    {adminEditorMode
+                      ? adminSelectionLabel()
+                      : "Select a row in the table or create a new row to start editing."}
+                  </p>
+                </div>
+                {adminEditorMode ? (
+                  <div className="admin-editor-actions">
                     <button className="action-button subtle" type="button" onClick={() => setAdminEditorMode(null)}>
                       Cancel
                     </button>
@@ -2562,11 +2608,58 @@ export default function App() {
                       {adminSaving ? "Saving..." : adminEditorMode === "edit" ? "Save Changes" : "Insert Row"}
                     </button>
                   </div>
+                ) : null}
+              </div>
+              {adminEditorMode && adminTableData ? (
+                <>
+                  <div className="admin-editor-grid">
+                    {adminTableData.columns.map((column) => {
+                      const isPrimaryKey = Boolean(column.primary_key);
+                      const isDisabled = adminEditorMode === "edit" && isPrimaryKey;
+                      return (
+                        <label key={column.name} className={`field admin-editor-field ${isPrimaryKey ? "pk" : ""}`}>
+                          <span>
+                            {column.name}
+                            {isPrimaryKey ? " (pk)" : ""}
+                          </span>
+                          <textarea
+                            rows="2"
+                            value={adminEditorValues[column.name] ?? ""}
+                            disabled={isDisabled}
+                            onChange={(event) =>
+                              setAdminEditorValues((current) => ({
+                                ...current,
+                                [column.name]: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {adminEditorMode === "edit" ? (
+                    <div className="admin-editor-footer">
+                      <button
+                        className="action-button destructive"
+                        type="button"
+                        onClick={() =>
+                          void handleAdminDeleteRow(
+                            Object.fromEntries(
+                              adminTableData.columns.map((column) => [column.name, adminEditorValues[column.name] ?? ""])
+                            )
+                          )
+                        }
+                        disabled={adminSaving}
+                      >
+                        Delete Row
+                      </button>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="sidebar-note-card">
                   <span className="sidebar-type-badge status">Admin</span>
-                  <p className="muted">The editor is schema-driven, so it works across every database table exposed by the backend.</p>
+                  <p className="muted">Click any row to edit it. Use New Row to insert records. Delete is available both in the table and inside the editor.</p>
                 </div>
               )}
             </div>
