@@ -3,16 +3,16 @@
   --font-sans: "Segoe UI Variable Display", "Segoe UI", "SF Pro Display", "Helvetica Neue", sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   --bg: #0a0a0a;
-  --bg-app: #0e0e0f;
-  --bg-elevated: #141415;
-  --bg-panel: #111112;
-  --bg-panel-2: #171719;
-  --bg-panel-3: #1d1d20;
-  --bg-hover: #1f1f22;
-  --bg-active: #242428;
-  --bg-input: #18181b;
-  --bg-soft: rgba(255, 255, 255, 0.04);
-  --bg-soft-strong: rgba(255, 255, 255, 0.08);
+  --bg-app: #0c0c0d;
+  --bg-elevated: #121213;
+  --bg-panel: #101011;
+  --bg-panel-2: #151517;
+  --bg-panel-3: #1b1b1e;
+  --bg-hover: #1a1a1d;
+  --bg-active: #202024;
+  --bg-input: #141416;
+  --bg-soft: rgba(255, 255, 255, 0.03);
+  --bg-soft-strong: rgba(255, 255, 255, 0.06);
   --text: rgba(255, 255, 255, 0.96);
   --text-strong: #ffffff;
   --text-muted: rgba(255, 255, 255, 0.62);
@@ -54,8 +54,9 @@ body {
   font-family: var(--font-sans);
   color: var(--text);
   background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 32%),
-    linear-gradient(180deg, #0f0f10 0%, #0a0a0a 100%);
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.035), transparent 26%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.02), transparent 22%),
+    linear-gradient(180deg, #0d0d0e 0%, #080809 100%);
 }
 
 body::before {
@@ -64,8 +65,13 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 26%),
-    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.04), transparent 28%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 20%),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 34px,
+      rgba(255, 255, 255, 0.012) 35px
+    );
 }
 
 button,
@@ -210,9 +216,9 @@ button {
 
 .content {
   align-content: start;
-  padding: 0 30px 32px;
-  gap: 24px;
-  max-width: 1240px;
+  padding: 0 42px 40px;
+  gap: 28px;
+  max-width: 1320px;
   width: 100%;
   margin: 0 auto;
 }
@@ -225,9 +231,9 @@ button {
   grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
   gap: 20px;
   align-items: center;
-  padding: 20px 0 18px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(10, 10, 10, 0.82);
+  padding: 26px 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 8, 9, 0.78);
   backdrop-filter: blur(18px);
 }
 
@@ -713,21 +719,24 @@ button {
 .metric,
 .chat-message,
 .subpanel,
-.modal-card,
 .approval-card {
-  border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(23, 23, 24, 0.92), rgba(17, 17, 18, 0.94));
-  box-shadow: var(--shadow-sm);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .panel {
-  padding: 18px;
+  padding: 22px 0 26px;
   display: grid;
   gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0;
 }
 
 .subpanel {
-  padding: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
 }
 
 .compact-stack {
@@ -754,9 +763,9 @@ button {
 .field textarea,
 .chat-compose textarea {
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--bg-input);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text);
   padding: 12px 14px;
 }
@@ -793,16 +802,18 @@ button {
 }
 
 .card {
-  padding: 16px;
+  padding: 14px 0 16px;
   gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0;
 }
 
 .card.compact {
-  padding: 14px;
+  padding: 12px 0;
 }
 
 .card.accent {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-bottom-color: rgba(255, 255, 255, 0.16);
 }
 
 .body-copy {
@@ -850,20 +861,23 @@ button {
   display: grid;
   gap: 4px;
   text-align: left;
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.02);
+  padding: 16px 0;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: transparent;
   color: var(--text);
 }
 
 .job-list-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
+  color: var(--text-strong);
 }
 
 .job-list-item.active {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--border-strong);
+  padding-left: 14px;
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 2px 0 0 #ffffff;
 }
 
 .job-list-title {
@@ -892,9 +906,10 @@ button {
 }
 
 .metric {
-  padding: 16px 18px;
+  padding: 12px 0 16px;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0;
 }
 
 .metric strong {
@@ -913,8 +928,6 @@ button {
   min-height: 72vh;
   height: calc(100vh - 150px);
   max-height: calc(100vh - 150px);
-  background:
-    linear-gradient(180deg, rgba(18, 18, 20, 0.96), rgba(12, 12, 13, 0.98));
 }
 
 .chat-top-row {
@@ -925,16 +938,16 @@ button {
   min-height: 0;
   overflow: auto;
   display: grid;
-  gap: 16px;
-  padding: 8px 0;
+  gap: 18px;
+  padding: 8px 0 18px;
   align-content: start;
 }
 
 .chat-message {
-  width: min(100%, 900px);
+  width: min(100%, 920px);
   margin: 0 auto;
-  padding: 16px 18px;
-  border-radius: 22px;
+  padding: 0;
+  border-radius: 0;
 }
 
 .chat-message.user {
@@ -955,13 +968,28 @@ button {
 }
 
 .chat-message.assistant {
-  background: rgba(255, 255, 255, 0.025);
+  position: relative;
+  padding: 0 0 0 68px;
+}
+
+.chat-message.assistant::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f3f3f3, #cfcfd2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
 .chat-message.tool {
   width: min(100%, 900px);
+  padding: 14px 16px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.045);
-  border-style: dashed;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
 }
 
 .markdown-message {
@@ -1111,12 +1139,12 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
-  width: min(100%, 900px);
+  width: min(100%, 920px);
   margin: 0 auto;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 28px;
-  background: rgba(23, 23, 24, 0.96);
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 30px;
+  background: rgba(17, 17, 18, 0.96);
   box-shadow: var(--shadow-md);
 }
 
