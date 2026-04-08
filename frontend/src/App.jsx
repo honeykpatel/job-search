@@ -1673,18 +1673,45 @@ export default function App() {
   const navPages = session?.access_token
     ? [...PAGES, ...(adminSession?.token ? ["Admin"] : [])]
     : ["Admin"];
+  const currentUserLabel =
+    session?.user?.email || (adminSession?.username ? `Admin: ${adminSession.username}` : "Signed in");
+  const avatarLabel = currentUserLabel
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("")
+    .slice(0, 2) || "JP";
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-mark">JP</div>
-          <div className="sidebar-brand-copy">
-            <strong>Job Pilot</strong>
-            <span className="sidebar-caption">Private search workspace</span>
-          </div>
+    <div className="app-shell">
+      <header className="shell-topbar">
+        <div className="shell-topbar-title">
+          <h1>JobPilot</h1>
         </div>
-        <section className="sidebar-card sidebar-panel">
+        <div className="shell-topbar-main" aria-hidden="true" />
+      </header>
+
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="sidebar-top">
+            <nav className="sidebar-nav">
+              {navPages.map((item) => (
+                <button
+                  key={item}
+                  className={`nav-button sidebar-nav-button ${item === page ? "active" : ""}`}
+                  onClick={() => {
+                    setPage(item);
+                    navigateTo(item === "Admin" ? "/admin" : "/");
+                  }}
+                  type="button"
+                >
+                  {item}
+                </button>
+              ))}
+            </nav>
+
+            <section className="sidebar-card sidebar-panel">
           {page === "Admin" ? (
             <>
               <div className="sidebar-section-head">
@@ -1958,43 +1985,45 @@ export default function App() {
               )) : <p className="sidebar-empty">No sessions match the filter.</p>}
             </div>
           )}
-        </section>
-      </aside>
-
-      <main className="content">
-        <header className="topbar">
-          <div className="topbar-title">
-            <h1>Job Pilot</h1>
-            <p className="muted topbar-user">
-              {session?.user?.email || (adminSession?.username ? `Admin: ${adminSession.username}` : "Signed in")}
-            </p>
+            </section>
           </div>
-          <nav className="topbar-nav">
-            {navPages.map((item) => (
+
+          <div className="sidebar-bottom">
+            <div className="sidebar-account">
+              <div className="sidebar-account-avatar" aria-hidden="true">{avatarLabel}</div>
+              <div className="sidebar-account-copy">
+                <strong>{currentUserLabel}</strong>
+                <span className="sidebar-caption">
+                  {adminSession?.token && !session?.access_token ? "Admin workspace" : "Private workspace"}
+                </span>
+              </div>
+            </div>
+            {session?.access_token ? (
               <button
-                key={item}
-                className={`nav-button topbar-nav-button ${item === page ? "active" : ""}`}
-                onClick={() => {
-                  setPage(item);
-                  navigateTo(item === "Admin" ? "/admin" : "/");
-                }}
+                className={`nav-button sidebar-account-button ${page === "Profile" ? "active" : ""}`}
                 type="button"
+                onClick={() => {
+                  setPage("Profile");
+                  navigateTo("/");
+                }}
               >
-                {item}
+                Profile
               </button>
-            ))}
+            ) : null}
             {adminSession?.token ? (
-              <button className="action-button subtle topbar-signout" type="button" onClick={handleAdminSignOut}>
+              <button className="action-button subtle sidebar-account-button" type="button" onClick={handleAdminSignOut}>
                 Admin Out
               </button>
             ) : null}
             {session?.access_token ? (
-              <button className="action-button subtle topbar-signout" type="button" onClick={handleSignOut}>
+              <button className="action-button subtle sidebar-account-button" type="button" onClick={handleSignOut}>
                 Sign Out
               </button>
             ) : null}
-          </nav>
-        </header>
+          </div>
+        </aside>
+
+        <main className="content">
 
         {error ? <div className="banner error">{error}</div> : null}
         {notice ? <div className="banner success">{notice}</div> : null}
@@ -2952,6 +2981,7 @@ export default function App() {
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
