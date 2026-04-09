@@ -540,6 +540,7 @@ button {
 
 .sidebar-helper-item {
   border-radius: 10px 0 0 10px;
+  min-width: 0;
 }
 
 .sidebar-item-title {
@@ -562,6 +563,7 @@ button {
 
 .sidebar-helper-meta {
   flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .sidebar-helper-meta span:last-child {
@@ -1010,9 +1012,10 @@ button {
 }
 
 .agent-chat-panel {
-  min-height: 72vh;
-  height: calc(100vh - 150px);
-  max-height: calc(100vh - 150px);
+  min-height: 0;
+  height: calc(100vh - 96px);
+  max-height: calc(100vh - 96px);
+  gap: 12px;
 }
 
 .chat-top-row {
@@ -1024,7 +1027,7 @@ button {
   overflow: auto;
   display: grid;
   gap: 18px;
-  padding: 8px 0 18px;
+  padding: 8px 0 8px;
   align-content: start;
 }
 
@@ -1200,7 +1203,7 @@ button {
 }
 
 .chat-quick-actions {
-  padding-top: 2px;
+  padding-top: 0;
 }
 
 .quick-prompt {
@@ -1226,25 +1229,28 @@ button {
   align-items: end;
   width: min(100%, 920px);
   margin: 0 auto;
-  padding: 14px 16px;
+  padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
+  border-radius: 20px;
   background: rgba(16, 16, 17, 0.96);
   box-shadow: var(--shadow-md);
 }
 
 .chat-compose-bar textarea {
-  min-height: 52px;
-  max-height: 150px;
+  min-height: 24px;
+  height: 24px;
+  max-height: 120px;
   resize: none;
   border: 0;
   background: transparent;
-  padding: 4px 6px;
+  padding: 6px 6px;
   box-shadow: none;
+  line-height: 1.45;
 }
 
 .chat-compose-bar .action-button {
-  min-width: 88px;
+  min-width: 76px;
+  min-height: 40px;
 }
 
 .checkbox {
@@ -1492,7 +1498,7 @@ button {
   .agent-chat-panel {
     height: auto;
     max-height: none;
-    min-height: 70vh;
+    min-height: 66vh;
   }
 
   .admin-toolbar,

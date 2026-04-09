@@ -1781,13 +1781,16 @@ export default function App() {
               <div className="sidebar-list">
                 {generalThreads.length ? (
                   generalThreads.map((thread) => (
-                    <div key={thread.id} className="sidebar-item-row">
+                    <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper">
                       <button
                         type="button"
-                        className={`mini-button sidebar-item ${selectedThreadId === thread.id ? "active" : ""}`}
+                        className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
                         onClick={() => setSelectedThreadId(thread.id)}
                       >
                         <span className="sidebar-item-title">Agent</span>
+                        <span className="sidebar-item-meta sidebar-helper-meta">
+                          <span>Main strategist</span>
+                        </span>
                       </button>
                     </div>
                   ))
