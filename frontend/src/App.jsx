@@ -1851,7 +1851,7 @@ export default function App() {
               <div className="sidebar-list">
                 {generalThreads.length ? (
                   generalThreads.map((thread) => (
-                    <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper">
+                    <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-no-actions">
                       <button
                         type="button"
                         className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}

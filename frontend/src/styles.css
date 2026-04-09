@@ -440,6 +440,10 @@ button {
   grid-template-columns: minmax(0, 1fr) 36px;
 }
 
+.sidebar-item-row-no-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar-item-row-flat {
   align-items: start;
 }
