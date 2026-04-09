@@ -1411,6 +1411,11 @@ button {
 }
 
 .checkbox input {
+  appearance: auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
   accent-color: #fff;
 }
 
