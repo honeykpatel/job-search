@@ -118,7 +118,7 @@ button {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 14px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .sidebar-top,
@@ -127,6 +127,22 @@ button {
   display: grid;
   gap: 12px;
   min-width: 0;
+}
+
+.sidebar-top {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.sidebar-top::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.sidebar-top::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
 }
 
 .sidebar-caption {
@@ -642,8 +658,12 @@ button {
 }
 
 .sidebar-bottom {
-  padding: 12px 6px 0;
+  position: relative;
+  z-index: 2;
+  padding: 16px 6px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(180deg, rgba(12, 12, 13, 0), rgba(12, 12, 13, 0.92) 18%, rgba(12, 12, 13, 0.98) 100%);
 }
 
 .sidebar-account-trigger {
@@ -701,7 +721,13 @@ button {
 .sidebar-account-menu {
   display: grid;
   gap: 8px;
-  padding: 8px 0 0 8px;
+  margin-left: 8px;
+  padding: 10px;
+  background: rgba(20, 20, 21, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(14px);
 }
 
 .sidebar-account-button {
