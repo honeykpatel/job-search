@@ -216,8 +216,8 @@ function serializeProfileForm(profileForm) {
 function Metric({ label, value }) {
   return (
     <div className="metric">
-      <span>{label}</span>
       <strong>{value}</strong>
+      <span>{label}</span>
     </div>
   );
 }
@@ -496,6 +496,7 @@ export default function App() {
   const [showToolDebug, setShowToolDebug] = useState(false);
   const [newThreadForm, setNewThreadForm] = useState({ job_id: "", resume_id: "" });
   const [showNewJobAgentModal, setShowNewJobAgentModal] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
@@ -1685,16 +1686,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="shell-topbar">
-        <div className="shell-topbar-title">
-          <h1>JobPilot</h1>
-        </div>
-        <div className="shell-topbar-main" aria-hidden="true" />
-      </header>
-
       <div className="shell">
         <aside className="sidebar">
           <div className="sidebar-top">
+            <div className="sidebar-title-row">
+              <h1>JobPilot</h1>
+            </div>
             <nav className="sidebar-nav">
               {navPages.map((item) => (
                 <button
@@ -1989,7 +1986,12 @@ export default function App() {
           </div>
 
           <div className="sidebar-bottom">
-            <div className="sidebar-account">
+            <button
+              className={`sidebar-account-trigger ${showAccountMenu ? "open" : ""}`}
+              type="button"
+              onClick={() => setShowAccountMenu((current) => !current)}
+              aria-expanded={showAccountMenu}
+            >
               <div className="sidebar-account-avatar" aria-hidden="true">{avatarLabel}</div>
               <div className="sidebar-account-copy">
                 <strong>{currentUserLabel}</strong>
@@ -1997,28 +1999,42 @@ export default function App() {
                   {adminSession?.token && !session?.access_token ? "Admin workspace" : "Private workspace"}
                 </span>
               </div>
-            </div>
-            {session?.access_token ? (
-              <button
-                className={`nav-button sidebar-account-button ${page === "Profile" ? "active" : ""}`}
-                type="button"
-                onClick={() => {
-                  setPage("Profile");
-                  navigateTo("/");
-                }}
-              >
-                Profile
-              </button>
-            ) : null}
-            {adminSession?.token ? (
-              <button className="action-button subtle sidebar-account-button" type="button" onClick={handleAdminSignOut}>
-                Admin Out
-              </button>
-            ) : null}
-            {session?.access_token ? (
-              <button className="action-button subtle sidebar-account-button" type="button" onClick={handleSignOut}>
-                Sign Out
-              </button>
+              <span className="sidebar-account-caret" aria-hidden="true">{showAccountMenu ? "−" : "+"}</span>
+            </button>
+            {showAccountMenu ? (
+              <div className="sidebar-account-menu">
+                {session?.access_token ? (
+                  <button
+                    className={`nav-button sidebar-account-button ${page === "Profile" ? "active" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setPage("Profile");
+                      navigateTo("/");
+                      setShowAccountMenu(false);
+                    }}
+                  >
+                    Profile
+                  </button>
+                ) : null}
+                {adminSession?.token ? (
+                  <button
+                    className="action-button subtle sidebar-account-button"
+                    type="button"
+                    onClick={handleAdminSignOut}
+                  >
+                    Admin Out
+                  </button>
+                ) : null}
+                {session?.access_token ? (
+                  <button
+                    className="action-button subtle sidebar-account-button"
+                    type="button"
+                    onClick={handleSignOut}
+                  >
+                    Sign Out
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </aside>
