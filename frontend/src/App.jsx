@@ -498,6 +498,7 @@ export default function App() {
   const [showNewJobAgentModal, setShowNewJobAgentModal] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [openSidebarItemMenu, setOpenSidebarItemMenu] = useState(null);
+  const [showChatMenu, setShowChatMenu] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
@@ -2935,17 +2936,36 @@ export default function App() {
                   {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
                 </span>
                 <div className="chat-thread-actions">
-                  <label className="checkbox">
-                    <input
-                      type="checkbox"
-                      checked={showToolDebug}
-                      onChange={(event) => setShowToolDebug(event.target.checked)}
-                    />
-                    Show tools
-                  </label>
-                  <button className="action-button subtle" type="button" onClick={handleClearThread}>
-                    Clear Thread
+                  <button
+                    className={`icon-button chat-menu-trigger ${showChatMenu ? "active" : ""}`}
+                    type="button"
+                    onClick={() => setShowChatMenu((current) => !current)}
+                    aria-label="Open chat options"
+                  >
+                    ...
                   </button>
+                  {showChatMenu ? (
+                    <div className="chat-menu">
+                      <label className="checkbox chat-menu-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={showToolDebug}
+                          onChange={(event) => setShowToolDebug(event.target.checked)}
+                        />
+                        Show tools
+                      </label>
+                      <button
+                        className="chat-menu-button"
+                        type="button"
+                        onClick={() => {
+                          setShowChatMenu(false);
+                          void handleClearThread();
+                        }}
+                      >
+                        Clear chat history
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="chat-log" ref={chatLogRef}>

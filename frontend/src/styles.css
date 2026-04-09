@@ -1096,6 +1096,57 @@ button {
   background: linear-gradient(180deg, rgba(13, 13, 14, 0.98), rgba(13, 13, 14, 0.82) 72%, transparent);
 }
 
+.chat-thread-actions {
+  position: relative;
+  margin-left: auto;
+}
+
+.chat-menu-trigger {
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.chat-menu-trigger.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.chat-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 6;
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  padding: 8px;
+  background: rgba(18, 18, 19, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+}
+
+.chat-menu-checkbox {
+  padding: 4px 6px;
+}
+
+.chat-menu-button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-menu-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .chat-log {
   min-height: 0;
   overflow: auto;
