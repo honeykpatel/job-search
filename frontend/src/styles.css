@@ -196,17 +196,21 @@ button {
 .sidebar-nav {
   display: grid;
   gap: 2px;
-  padding: 0 6px 10px;
+  padding: 0 4px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  justify-items: stretch;
 }
 
 .sidebar-nav-button {
   justify-content: flex-start;
+  justify-items: start;
+  text-align: left;
   width: 100%;
-  min-height: 42px;
-  padding: 0 10px;
-  border-radius: 10px;
-  font-size: 0.92rem;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.2;
 }
 
 .sidebar-list {
@@ -486,9 +490,9 @@ button {
 }
 
 .nav-button {
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 10px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
   color: var(--text-muted);
 }
 
