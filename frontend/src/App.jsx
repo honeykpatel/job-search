@@ -1617,6 +1617,15 @@ export default function App() {
           "How should I prepare for this interview?",
           "Update this application plan",
         ];
+  const marqueePrompts = [...quickPrompts, ...quickPrompts];
+
+  function forwardScrollToChat(event) {
+    if (!chatLogRef.current) {
+      return;
+    }
+    event.preventDefault();
+    chatLogRef.current.scrollTop += event.deltaY;
+  }
 
   async function handleAuthSubmit(event) {
     event.preventDefault();
@@ -2968,23 +2977,26 @@ export default function App() {
                 )}
               </div>
               {pendingAction ? renderPendingActionPreview() : null}
-              <div className="chat-quick-actions">
-                {quickPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    className="quick-prompt"
-                    onClick={() => setChatInput(prompt)}
-                  >
-                    {prompt}
-                  </button>
-                ))}
+              <div className="chat-quick-actions" onWheel={forwardScrollToChat}>
+                <div className="chat-quick-actions-track">
+                  {marqueePrompts.map((prompt, index) => (
+                    <button
+                      key={`${prompt}-${index}`}
+                      type="button"
+                      className="quick-prompt"
+                      onClick={() => setChatInput(prompt)}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
               <form className="chat-compose chat-compose-bar" onSubmit={handleSendChat}>
                 <textarea
                   rows="3"
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
+                  onWheel={forwardScrollToChat}
                   placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
                 />
                 <button className="action-button primary" type="submit" disabled={sendingChat || !selectedThreadId}>

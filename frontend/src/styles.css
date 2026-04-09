@@ -1272,9 +1272,22 @@ button {
   padding-top: 0;
   width: min(100%, 920px);
   margin: 0 auto;
+  overflow: hidden;
+}
+
+.chat-quick-actions-track {
+  display: flex;
+  gap: 10px;
+  width: max-content;
+  animation: prompt-marquee 34s linear infinite;
+}
+
+.chat-quick-actions:hover .chat-quick-actions-track {
+  animation-play-state: paused;
 }
 
 .quick-prompt {
+  flex: 0 0 auto;
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -1286,6 +1299,16 @@ button {
 .quick-prompt:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
+}
+
+@keyframes prompt-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(-50% - 5px));
+  }
 }
 
 .chat-compose-bar {
