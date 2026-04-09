@@ -497,6 +497,7 @@ export default function App() {
   const [newThreadForm, setNewThreadForm] = useState({ job_id: "", resume_id: "" });
   const [showNewJobAgentModal, setShowNewJobAgentModal] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [openSidebarItemMenu, setOpenSidebarItemMenu] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
@@ -1119,6 +1120,26 @@ export default function App() {
     }
   }
 
+  async function handleRenameThread(threadId, currentTitle) {
+    const nextTitle = window.prompt("Rename helper", currentTitle || "");
+    if (!nextTitle || !nextTitle.trim()) {
+      return;
+    }
+
+    try {
+      setError("");
+      await api(`/api/threads/${threadId}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: nextTitle.trim() }),
+        accessToken: session?.access_token,
+      });
+      setOpenSidebarItemMenu(null);
+      await refreshCollections();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleDeleteSession(sessionId) {
     const confirmed = window.confirm(
       "Delete this session and all jobs, job chats, and related application data created from it?"
@@ -1146,6 +1167,26 @@ export default function App() {
     }
   }
 
+  async function handleRenameSession(sessionId, currentTitle) {
+    const nextTitle = window.prompt("Rename saved search", currentTitle || "");
+    if (!nextTitle || !nextTitle.trim()) {
+      return;
+    }
+
+    try {
+      setError("");
+      await api(`/api/sessions/${sessionId}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: nextTitle.trim() }),
+        accessToken: session?.access_token,
+      });
+      setOpenSidebarItemMenu(null);
+      await refreshCollections();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleDeleteResume(resumeId) {
     const confirmed = window.confirm("Delete this saved resume?");
     if (!confirmed) {
@@ -1159,6 +1200,26 @@ export default function App() {
         setSelectedResumeId(null);
       }
       setNotice(`Deleted resume #${resumeId}.`);
+      await refreshCollections();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleRenameResume(resumeId, currentTitle) {
+    const nextTitle = window.prompt("Rename resume", currentTitle || "");
+    if (!nextTitle || !nextTitle.trim()) {
+      return;
+    }
+
+    try {
+      setError("");
+      await api(`/api/resumes/${resumeId}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: nextTitle.trim() }),
+        accessToken: session?.access_token,
+      });
+      setOpenSidebarItemMenu(null);
       await refreshCollections();
     } catch (err) {
       setError(err.message);
@@ -1816,8 +1877,9 @@ export default function App() {
                     const helperTitle = `${job?.title || "Untitled"} @ ${job?.company || "Unknown"}`;
                     const helperStatus = job?.application_status || "saved";
                     const helperResume = resume?.filename || "No resume";
+                    const menuId = `thread-${thread.id}`;
                     return (
-                      <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper">
+                      <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-flat">
                         <button
                           type="button"
                           className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
@@ -1830,22 +1892,44 @@ export default function App() {
                             <span>{helperResume}</span>
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          className="icon-button destructive sidebar-inline-delete"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDeleteThread(thread.id);
-                          }}
-                          aria-label={`Delete thread ${thread.id}`}
-                        >
-                          <svg viewBox="0 0 24 24" aria-hidden="true" className="sidebar-delete-icon">
-                            <path
-                              d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm1 11c-1.1 0-2-.9-2-2V8h12v11c0 1.1-.9 2-2 2H8Z"
-                              fill="currentColor"
-                            />
-                          </svg>
-                        </button>
+                        <div className="sidebar-item-actions">
+                          <button
+                            type="button"
+                            className={`icon-button sidebar-item-menu-trigger ${openSidebarItemMenu === menuId ? "active" : ""}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
+                            }}
+                            aria-label={`Open options for helper ${thread.id}`}
+                          >
+                            ...
+                          </button>
+                          {openSidebarItemMenu === menuId ? (
+                            <div className="sidebar-item-menu">
+                              <button
+                                type="button"
+                                className="sidebar-item-menu-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleRenameThread(thread.id, thread.title || helperTitle);
+                                }}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                type="button"
+                                className="sidebar-item-menu-button destructive"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleDeleteThread(thread.id);
+                                  setOpenSidebarItemMenu(null);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     );
                   })
@@ -1871,8 +1955,9 @@ export default function App() {
                   filteredSessions.map((session) => {
                     const sessionTitle = session.job_title || "Untitled search";
                     const sessionMeta = new Date(session.created_at).toLocaleDateString();
+                    const menuId = `session-${session.id}`;
                     return (
-                      <div key={session.id} className="sidebar-item-row sidebar-item-row-helper">
+                      <div key={session.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-flat">
                         <button
                           type="button"
                           className={`mini-button sidebar-item sidebar-helper-item ${selectedSessionId === session.id ? "active" : ""}`}
@@ -1884,22 +1969,44 @@ export default function App() {
                             <span>{sessionMeta}</span>
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          className="icon-button destructive sidebar-inline-delete"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDeleteSession(session.id);
-                          }}
-                          aria-label={`Delete session ${session.id}`}
-                        >
-                          <svg viewBox="0 0 24 24" aria-hidden="true" className="sidebar-delete-icon">
-                            <path
-                              d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm1 11c-1.1 0-2-.9-2-2V8h12v11c0 1.1-.9 2-2 2H8Z"
-                              fill="currentColor"
-                            />
-                          </svg>
-                        </button>
+                        <div className="sidebar-item-actions">
+                          <button
+                            type="button"
+                            className={`icon-button sidebar-item-menu-trigger ${openSidebarItemMenu === menuId ? "active" : ""}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
+                            }}
+                            aria-label={`Open options for search session ${session.id}`}
+                          >
+                            ...
+                          </button>
+                          {openSidebarItemMenu === menuId ? (
+                            <div className="sidebar-item-menu">
+                              <button
+                                type="button"
+                                className="sidebar-item-menu-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleRenameSession(session.id, sessionTitle);
+                                }}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                type="button"
+                                className="sidebar-item-menu-button destructive"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleDeleteSession(session.id);
+                                  setOpenSidebarItemMenu(null);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     );
                   })
@@ -1923,7 +2030,7 @@ export default function App() {
               <div className="sidebar-list">
                 {resumes.length ? (
                   resumes.map((resume) => (
-                    <div key={resume.id} className="sidebar-item-row sidebar-item-row-helper">
+                    <div key={resume.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-flat">
                       <button
                         type="button"
                         className={`mini-button sidebar-item sidebar-helper-item ${selectedResumeId === resume.id ? "active" : ""}`}
@@ -1935,22 +2042,44 @@ export default function App() {
                           <span>{new Date(resume.created_at).toLocaleDateString()}</span>
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        className="icon-button destructive sidebar-inline-delete"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleDeleteResume(resume.id);
-                        }}
-                        aria-label={`Delete resume ${resume.id}`}
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true" className="sidebar-delete-icon">
-                          <path
-                            d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm1 11c-1.1 0-2-.9-2-2V8h12v11c0 1.1-.9 2-2 2H8Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                      </button>
+                      <div className="sidebar-item-actions">
+                        <button
+                          type="button"
+                          className={`icon-button sidebar-item-menu-trigger ${openSidebarItemMenu === `resume-${resume.id}` ? "active" : ""}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenSidebarItemMenu((current) => (current === `resume-${resume.id}` ? null : `resume-${resume.id}`));
+                          }}
+                          aria-label={`Open options for resume ${resume.id}`}
+                        >
+                          ...
+                        </button>
+                        {openSidebarItemMenu === `resume-${resume.id}` ? (
+                          <div className="sidebar-item-menu">
+                            <button
+                              type="button"
+                              className="sidebar-item-menu-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleRenameResume(resume.id, resume.filename);
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="sidebar-item-menu-button destructive"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleDeleteResume(resume.id);
+                                setOpenSidebarItemMenu(null);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -1960,29 +2089,62 @@ export default function App() {
             </>
           ) : (
             <div className="sidebar-list">
-              {filteredSessions.length ? filteredSessions.map((session) => (
-                <div key={session.id} className="sidebar-item-row">
+              {filteredSessions.length ? filteredSessions.map((session) => {
+                const sessionTitle = session.job_title || "Untitled search";
+                const menuId = `session-${session.id}`;
+                return (
+                <div key={session.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-flat">
                   <button
                     type="button"
-                    className={`mini-button sidebar-item ${selectedSessionId === session.id ? "active" : ""}`}
+                    className={`mini-button sidebar-item sidebar-helper-item ${selectedSessionId === session.id ? "active" : ""}`}
                     onClick={() => setSelectedSessionId(session.id)}
                   >
-                    <span className="sidebar-item-title">{session.job_title || "Untitled search"}</span>
-                    <span className="sidebar-item-meta">
+                    <span className="sidebar-item-title">{sessionTitle}</span>
+                    <span className="sidebar-item-meta sidebar-helper-meta">
                       <span className="sidebar-type-badge session">Session</span>
                       <span>{new Date(session.created_at).toLocaleDateString()} | {session.k} results</span>
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    className="icon-button destructive"
-                    onClick={() => void handleDeleteSession(session.id)}
-                    aria-label={`Delete session ${session.id}`}
-                  >
-                    x
-                  </button>
+                  <div className="sidebar-item-actions">
+                    <button
+                      type="button"
+                      className={`icon-button sidebar-item-menu-trigger ${openSidebarItemMenu === menuId ? "active" : ""}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
+                      }}
+                      aria-label={`Open options for search session ${session.id}`}
+                    >
+                      ...
+                    </button>
+                    {openSidebarItemMenu === menuId ? (
+                      <div className="sidebar-item-menu">
+                        <button
+                          type="button"
+                          className="sidebar-item-menu-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRenameSession(session.id, sessionTitle);
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="sidebar-item-menu-button destructive"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteSession(session.id);
+                            setOpenSidebarItemMenu(null);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              )) : <p className="sidebar-empty">No sessions match the filter.</p>}
+              )}) : <p className="sidebar-empty">No sessions match the filter.</p>}
             </div>
           )}
             </section>

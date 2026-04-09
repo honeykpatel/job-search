@@ -30,14 +30,14 @@ from memory.tools import reset_active_user_id, set_active_user_id
 from parsing.resume_text import extract_text
 from storage.db import (
     add_chat_message,
-    clear_chat_thread,
-    create_chat_thread,
-    delete_application,
     admin_delete_table_row,
     admin_get_table_data,
     admin_insert_table_row,
     admin_list_tables,
     admin_update_table_row,
+    clear_chat_thread,
+    create_chat_thread,
+    delete_application,
     delete_chat_thread,
     delete_resume,
     delete_session,
@@ -62,6 +62,9 @@ from storage.db import (
     save_user_profile,
     search_jobs as db_search_jobs,
     touch_chat_thread,
+    update_chat_thread_title,
+    update_resume_filename,
+    update_session_title,
     upsert_application,
 )
 from utils.company_inference import ensure_job_company
@@ -129,6 +132,10 @@ class ChatRequest(BaseModel):
 class ApprovalActionRequest(BaseModel):
     action_type: str
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class RenameRequest(BaseModel):
+    title: str
 
 
 class AdminLoginRequest(BaseModel):
@@ -386,6 +393,28 @@ def delete_session_route(session_id: int, current_user_id: str = Depends(require
     return delete_session(session_id, user_id=current_user_id)
 
 
+@app.put("/api/sessions/{session_id}")
+def rename_session_route(
+    session_id: int,
+    payload: RenameRequest,
+    current_user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    update_session_title(session_id, payload.title, user_id=current_user_id)
+    rows = list_sessions(limit=500, user_id=current_user_id)
+    for row in rows:
+        if int(row[0]) == int(session_id):
+            return {
+                "id": row[0],
+                "job_title": row[1],
+                "location": row[2],
+                "work_style": row[3],
+                "k": row[4],
+                "created_at": row[5],
+                "job_count": row[6],
+            }
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
 @app.get("/api/jobs")
 def get_jobs(
     query: str = "",
@@ -456,6 +485,19 @@ async def upload_resume(file: UploadFile = File(...), current_user_id: str = Dep
 def delete_resume_route(resume_id: int, current_user_id: str = Depends(require_user_id)) -> dict[str, bool]:
     delete_resume(resume_id, user_id=current_user_id)
     return {"ok": True}
+
+
+@app.put("/api/resumes/{resume_id}")
+def rename_resume_route(
+    resume_id: int,
+    payload: RenameRequest,
+    current_user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    update_resume_filename(resume_id, payload.title, user_id=current_user_id)
+    resume = get_resume(resume_id, user_id=current_user_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    return resume
 
 
 @app.get("/api/matches")
@@ -616,6 +658,22 @@ def clear_thread(thread_id: int, current_user_id: str = Depends(require_user_id)
 def delete_thread(thread_id: int, current_user_id: str = Depends(require_user_id)) -> dict[str, bool]:
     delete_chat_thread(thread_id, user_id=current_user_id)
     return {"ok": True}
+
+
+@app.put("/api/threads/{thread_id}")
+def rename_thread_route(
+    thread_id: int,
+    payload: RenameRequest,
+    current_user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    thread = get_chat_thread(thread_id, user_id=current_user_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    update_chat_thread_title(thread_id, payload.title, user_id=current_user_id)
+    updated = get_chat_thread(thread_id, user_id=current_user_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return updated
 
 
 @app.post("/api/threads/{thread_id}/messages")

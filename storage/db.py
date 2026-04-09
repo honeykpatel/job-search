@@ -743,6 +743,25 @@ def delete_session(session_id: int, user_id: str | None = None):
             text("DELETE FROM search_sessions WHERE id = :session_id AND user_id = :user_id"),
             {"session_id": int(session_id), "user_id": resolved_user_id},
         )
+
+
+def update_session_title(session_id: int, job_title: str, user_id: str | None = None):
+    resolved_user_id = _resolve_user_id(user_id)
+    with ENGINE.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE search_sessions
+                SET job_title = :job_title
+                WHERE id = :session_id AND user_id = :user_id
+                """
+            ),
+            {
+                "job_title": job_title.strip() or "Untitled search",
+                "session_id": int(session_id),
+                "user_id": resolved_user_id,
+            },
+        )
         return {
             "deleted_job_ids": job_ids,
             "deleted_thread_ids": deleted_thread_ids,
@@ -962,6 +981,25 @@ def delete_resume(resume_id: int, user_id: str | None = None):
         conn.execute(
             text("DELETE FROM resumes WHERE id = :resume_id AND user_id = :user_id"),
             {"resume_id": int(resume_id), "user_id": resolved_user_id},
+        )
+
+
+def update_resume_filename(resume_id: int, filename: str, user_id: str | None = None):
+    resolved_user_id = _resolve_user_id(user_id)
+    with ENGINE.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE resumes
+                SET filename = :filename
+                WHERE id = :resume_id AND user_id = :user_id
+                """
+            ),
+            {
+                "filename": filename.strip() or "Untitled resume",
+                "resume_id": int(resume_id),
+                "user_id": resolved_user_id,
+            },
         )
 
 

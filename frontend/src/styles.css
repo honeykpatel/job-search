@@ -429,10 +429,15 @@ button {
   grid-template-columns: minmax(0, 1fr) 42px;
   gap: 6px;
   align-items: stretch;
+  position: relative;
 }
 
 .sidebar-item-row-helper {
   grid-template-columns: minmax(0, 1fr) 36px;
+}
+
+.sidebar-item-row-flat {
+  align-items: start;
 }
 
 .nav-button,
@@ -501,14 +506,14 @@ button {
 
 .mini-button {
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 8px;
   text-align: left;
   color: var(--text-muted);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .mini-button:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.035);
   color: var(--text);
 }
 
@@ -519,27 +524,27 @@ button {
 .sidebar-item {
   display: grid;
   gap: 2px;
-  padding: 8px 10px;
+  padding: 8px 8px;
   background: transparent;
   border: 0;
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .sidebar-item:hover,
 .sidebar-helper-item:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.035);
   border-color: transparent;
 }
 
 .sidebar-item.active,
 .sidebar-helper-item.active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
   border-color: transparent;
 }
 
 .sidebar-helper-item {
-  border-radius: 10px 0 0 10px;
+  border-radius: 8px;
   min-width: 0;
 }
 
@@ -604,13 +609,65 @@ button {
   width: 34px;
   height: 34px;
   border: 0;
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
   color: var(--text-muted);
+  border-radius: 8px;
 }
 
 .icon-button:hover {
-  background: var(--bg-hover);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text);
+}
+
+.sidebar-item-actions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+
+.sidebar-item-menu-trigger {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.sidebar-item-menu-trigger.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.sidebar-item-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 6;
+  display: grid;
+  gap: 2px;
+  min-width: 120px;
+  padding: 6px;
+  background: rgba(18, 18, 19, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+}
+
+.sidebar-item-menu-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-item-menu-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-item-menu-button.destructive {
+  color: var(--danger);
 }
 
 .action-button {
