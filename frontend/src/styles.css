@@ -1395,15 +1395,26 @@ button {
 }
 
 .chat-compose-bar textarea {
+  appearance: none;
   min-height: 24px;
   height: 24px;
   max-height: 120px;
   resize: none;
   border: 0;
+  border-radius: 0;
   background: transparent;
-  padding: 6px 6px;
+  padding: 6px 4px;
+  outline: none;
   box-shadow: none;
   line-height: 1.45;
+}
+
+.chat-compose-bar textarea:focus,
+.chat-compose-bar textarea:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
 }
 
 .chat-compose-bar .action-button {
