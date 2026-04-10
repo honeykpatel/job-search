@@ -347,7 +347,7 @@ def run_search(payload: SearchRequest, current_user_id: str = Depends(require_us
     jobs = dedupe_jobs(jobs)[: payload.k]
 
     session_id: int | None = None
-    if payload.save_results:
+    if payload.save_results and jobs:
         session_id = save_session(
             job_title,
             payload.location.strip(),

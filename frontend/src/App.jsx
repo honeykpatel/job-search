@@ -899,8 +899,13 @@ export default function App() {
         accessToken: session?.access_token,
       });
       setSearchResult(data);
-      setNotice(`Saved session #${data.session_id} with ${data.jobs.length} jobs.`);
-      setSelectedSessionId(data.session_id);
+      if (data.jobs.length) {
+        setNotice(`Saved search with ${data.jobs.length} jobs.`);
+        setSelectedSessionId(data.session_id);
+      } else {
+        setNotice("No jobs found for that search.");
+        setSelectedSessionId(null);
+      }
       setShowSearchModal(false);
       await refreshCollections();
     } catch (err) {
@@ -1152,7 +1157,7 @@ export default function App() {
     try {
       setError("");
       await api(`/api/sessions/${sessionId}`, { method: "DELETE", accessToken: session?.access_token });
-      setNotice(`Deleted session #${sessionId} and its related jobs, chats, and tracker data.`);
+      setNotice("Deleted saved search and its related jobs, chats, and tracker data.");
       setSearchResult((current) =>
         current.session_id === sessionId ? { session_id: null, jobs: [], sources: {} } : current
       );
@@ -2022,7 +2027,7 @@ export default function App() {
                     );
                   })
                 ) : (
-                  <p className="sidebar-empty">No sessions yet.</p>
+                  <p className="sidebar-empty">No saved searches yet.</p>
                 )}
               </div>
             </>
@@ -2112,7 +2117,7 @@ export default function App() {
                   >
                     <span className="sidebar-item-title">{sessionTitle}</span>
                     <span className="sidebar-item-meta sidebar-helper-meta">
-                      <span className="sidebar-type-badge session">Session</span>
+                      <span className="sidebar-type-badge session">Saved search</span>
                       <span>{new Date(session.created_at).toLocaleDateString()} | {session.k} results</span>
                     </span>
                   </button>
@@ -2155,7 +2160,7 @@ export default function App() {
                     ) : null}
                   </div>
                 </div>
-              )}) : <p className="sidebar-empty">No sessions match the filter.</p>}
+              )}) : <p className="sidebar-empty">No saved searches match the filter.</p>}
             </div>
           )}
             </section>
@@ -2225,7 +2230,7 @@ export default function App() {
             <div className="panel job-session-list-panel">
               <div className="section-heading">
                 <h3>Searched Jobs</h3>
-                <p>{selectedSessionId ? `Jobs saved under session #${selectedSessionId}.` : "Select a session from the sidebar."}</p>
+                <p>{selectedSessionId ? "Jobs from your selected saved search." : "Select a saved search from the sidebar."}</p>
               </div>
               <div className="job-session-list">
                 {selectedSessionJobs.length ? (
