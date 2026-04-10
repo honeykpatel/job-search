@@ -499,6 +499,7 @@ export default function App() {
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [openSidebarItemMenu, setOpenSidebarItemMenu] = useState(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
@@ -509,6 +510,10 @@ export default function App() {
       window.history.pushState({}, "", nextPath);
     }
     setPathname(window.location.pathname || nextPath);
+  }
+
+  function closeMobileSidebar() {
+    setIsMobileSidebarOpen(false);
   }
 
   useEffect(() => {
@@ -1763,7 +1768,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="shell">
-        <aside className="sidebar">
+        <aside className={`sidebar ${isMobileSidebarOpen ? "open" : ""}`}>
           <div className="sidebar-top">
             <div className="sidebar-title-row">
               <img className="sidebar-title-logo" src="/JobPilotLogo.png" alt="JobPilot logo" />
@@ -1777,6 +1782,7 @@ export default function App() {
                   onClick={() => {
                     setPage(item);
                     navigateTo(item === "Admin" ? "/admin" : "/");
+                    closeMobileSidebar();
                   }}
                   type="button"
                 >
@@ -1862,7 +1868,10 @@ export default function App() {
                       <button
                         type="button"
                         className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
-                        onClick={() => setSelectedThreadId(thread.id)}
+                        onClick={() => {
+                          setSelectedThreadId(thread.id);
+                          closeMobileSidebar();
+                        }}
                       >
                         <span className="sidebar-item-title">Agent</span>
                         <span className="sidebar-item-meta sidebar-helper-meta">
@@ -1899,7 +1908,10 @@ export default function App() {
                         <button
                           type="button"
                           className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
-                          onClick={() => setSelectedThreadId(thread.id)}
+                          onClick={() => {
+                            setSelectedThreadId(thread.id);
+                            closeMobileSidebar();
+                          }}
                           title={`${helperTitle} | ${helperResume}`}
                         >
                           <span className="sidebar-item-title">{helperTitle}</span>
@@ -1977,7 +1989,10 @@ export default function App() {
                         <button
                           type="button"
                           className={`mini-button sidebar-item sidebar-helper-item ${selectedSessionId === session.id ? "active" : ""}`}
-                          onClick={() => setSelectedSessionId(session.id)}
+                          onClick={() => {
+                            setSelectedSessionId(session.id);
+                            closeMobileSidebar();
+                          }}
                           title={sessionTitle}
                         >
                           <span className="sidebar-item-title">{sessionTitle}</span>
@@ -2050,7 +2065,10 @@ export default function App() {
                       <button
                         type="button"
                         className={`mini-button sidebar-item sidebar-helper-item ${selectedResumeId === resume.id ? "active" : ""}`}
-                        onClick={() => setSelectedResumeId(resume.id)}
+                        onClick={() => {
+                          setSelectedResumeId(resume.id);
+                          closeMobileSidebar();
+                        }}
                         title={resume.filename}
                       >
                         <span className="sidebar-item-title">{resume.filename}</span>
@@ -2113,7 +2131,10 @@ export default function App() {
                   <button
                     type="button"
                     className={`mini-button sidebar-item sidebar-helper-item ${selectedSessionId === session.id ? "active" : ""}`}
-                    onClick={() => setSelectedSessionId(session.id)}
+                    onClick={() => {
+                      setSelectedSessionId(session.id);
+                      closeMobileSidebar();
+                    }}
                   >
                     <span className="sidebar-item-title">{sessionTitle}</span>
                     <span className="sidebar-item-meta sidebar-helper-meta">
@@ -2221,6 +2242,16 @@ export default function App() {
         </aside>
 
         <main className="content">
+        <div className="mobile-topbar">
+          <button
+            className="icon-button mobile-sidebar-toggle"
+            type="button"
+            onClick={() => setIsMobileSidebarOpen((current) => !current)}
+            aria-label={isMobileSidebarOpen ? "Close sidebar" : "Open sidebar"}
+          >
+            {isMobileSidebarOpen ? "x" : "="}
+          </button>
+        </div>
 
         {error ? <div className="banner error">{error}</div> : null}
         {notice ? <div className="banner success">{notice}</div> : null}
@@ -3199,6 +3230,14 @@ export default function App() {
             </div>
           </div>
         </div>
+      ) : null}
+      {isMobileSidebarOpen ? (
+        <button
+          type="button"
+          className="mobile-sidebar-backdrop"
+          onClick={closeMobileSidebar}
+          aria-label="Close sidebar"
+        />
       ) : null}
       </div>
     </div>

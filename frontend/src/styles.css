@@ -257,6 +257,14 @@ button {
   margin: 0 auto;
 }
 
+.mobile-topbar {
+  display: none;
+}
+
+.mobile-sidebar-backdrop {
+  display: none;
+}
+
 .brand h1,
 .section-heading h3,
 .card h4,
@@ -1650,8 +1658,19 @@ button {
   }
 
   .sidebar {
-    position: static;
-    height: auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 30;
+    width: min(320px, 86vw);
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    box-shadow: 18px 0 40px rgba(0, 0, 0, 0.32);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
   }
 
   .two-up,
@@ -1688,7 +1707,29 @@ button {
 
 @media (max-width: 720px) {
   .content {
-    padding: 24px 16px 24px;
+    padding: 14px 16px 24px;
+  }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+
+  .mobile-sidebar-toggle {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, 0.48);
   }
 
   .sidebar {
