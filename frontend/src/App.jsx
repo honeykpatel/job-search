@@ -1761,6 +1761,7 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-top">
             <div className="sidebar-title-row">
+              <img className="sidebar-title-logo" src="/JobPilotLogo.png" alt="JobPilot logo" />
               <h1>JobPilot</h1>
             </div>
             <nav className="sidebar-nav">
