@@ -390,7 +390,8 @@ def get_session_jobs_route(session_id: int, current_user_id: str = Depends(requi
 
 @app.delete("/api/sessions/{session_id}")
 def delete_session_route(session_id: int, current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
-    return delete_session(session_id, user_id=current_user_id)
+    delete_session(session_id, user_id=current_user_id)
+    return {"ok": True}
 
 
 @app.put("/api/sessions/{session_id}")
