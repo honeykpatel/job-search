@@ -410,10 +410,6 @@ button {
   border-radius: 0;
 }
 
-.profile-sidebar-card {
-  margin-top: 4px;
-}
-
 .sidebar-inline-section {
   display: grid;
   gap: 8px;

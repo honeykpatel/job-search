@@ -1755,8 +1755,12 @@ export default function App() {
   const navPages = session?.access_token
     ? [...PAGES, ...(adminSession?.token ? ["Admin"] : [])]
     : ["Admin"];
+  const currentUserFullName =
+    String(accountForm.full_name || "").trim() || String(session?.user?.user_metadata?.full_name || "").trim();
   const currentUserLabel =
-    session?.user?.email || (adminSession?.username ? `Admin: ${adminSession.username}` : "Signed in");
+    currentUserFullName ||
+    session?.user?.email ||
+    (adminSession?.username ? `Admin: ${adminSession.username}` : "Signed in");
   const avatarLabel = currentUserLabel
     .split(/[\s@._-]+/)
     .filter(Boolean)
@@ -1839,27 +1843,8 @@ export default function App() {
                 )}
               </div>
             </>
-          ) : page === "Profile" ? (
-            <>
-              <div className="sidebar-section-head">
-                <div>
-                  <p className="eyebrow">Standing Context</p>
-                  <h3>Agent Profile</h3>
-                </div>
-                <span className="sidebar-chip">Profile</span>
-              </div>
-              <div className="sidebar-note">
-                This tab defines your standing context for Agent. Jobs, applications, resumes, and notes remain in the saved database and do not belong here.
-              </div>
-              <div className="sidebar-note-card profile-sidebar-card">
-                <span className="sidebar-type-badge deep">Agent</span>
-                <p className="muted">
-                  Tell the agent what kind of roles you want, what you are strongest at, what constraints matter, and what preferences should shape advice across all chats.
-                </p>
-              </div>
-            </>
           ) : null}
-          {page === "Profile" ? null : page === "Agent" ? (
+          {page === "Agent" ? (
             <>
               <div className="sidebar-list">
                 {generalThreads.length ? (
