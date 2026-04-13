@@ -826,25 +826,63 @@ button {
   font-size: 0.88rem;
 }
 
-.banner {
-  padding: 12px 0 12px 14px;
-  border: 0;
-  border-left: 2px solid var(--border);
-  background: transparent;
-  border-radius: 0;
+.notification-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 6, 7, 0.46);
+  backdrop-filter: blur(8px);
 }
 
-.banner.error,
-.error-banner {
+.notification-popup {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  background: rgba(18, 18, 19, 0.98);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.notification-popup.error {
+  border-color: rgba(255, 125, 125, 0.28);
+}
+
+.notification-popup.success {
+  border-color: rgba(125, 225, 167, 0.24);
+}
+
+.notification-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-copy strong {
+  font-size: 1rem;
+  color: var(--text-strong);
+}
+
+.notification-copy p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.notification-popup.error .notification-copy strong {
   color: var(--danger);
-  border-color: rgba(255, 125, 125, 0.24);
-  background: var(--danger-soft);
 }
 
-.banner.success {
+.notification-popup.success .notification-copy strong {
   color: var(--success);
-  border-color: rgba(125, 225, 167, 0.22);
-  background: var(--success-soft);
+}
+
+.notification-dismiss {
+  justify-self: end;
+  min-width: 88px;
 }
 
 .grid {

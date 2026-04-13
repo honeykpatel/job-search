@@ -84,7 +84,6 @@ function AuthShell({
             {loading ? "Please wait..." : mode === "sign-in" ? "Sign In" : "Create Account"}
           </button>
         </form>
-        {error ? <p className="error-banner auth-error">{error}</p> : null}
         <button
           className="action-button subtle"
           type="button"
@@ -134,7 +133,6 @@ function AdminAuthShell({ form, loading, error, onChange, onSubmit, onBackToUser
             {loading ? "Signing in..." : "Admin Login"}
           </button>
         </form>
-        {error ? <p className="error-banner auth-error">{error}</p> : null}
         <button className="action-button subtle" type="button" onClick={onBackToUser}>
           Back to User Login
         </button>
@@ -148,6 +146,31 @@ function formatDate(value) {
     return "Unknown date";
   }
   return new Date(value).toLocaleString();
+}
+
+function NotificationPopup({ type, message, onDismiss }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="notification-overlay" role="presentation">
+      <div
+        className={`notification-popup ${type === "error" ? "error" : "success"}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-live="assertive"
+      >
+        <div className="notification-copy">
+          <strong>{type === "error" ? "Error" : "Notification"}</strong>
+          <p>{message}</p>
+        </div>
+        <button className="action-button primary notification-dismiss" type="button" onClick={onDismiss}>
+          OK
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function scoreLabel(score) {
@@ -535,6 +558,20 @@ export default function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!error && !notice && !authConfigError) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setError("");
+      setNotice("");
+      setAuthConfigError("");
+    }, 5000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [error, notice, authConfigError]);
 
   useEffect(() => {
     let isActive = true;
@@ -1720,35 +1757,49 @@ export default function App() {
     setNotice("Admin session ended.");
   }
 
+  const notificationType = error || authConfigError ? "error" : "success";
+  const notificationMessage = error || notice || authConfigError;
+  const dismissNotification = () => {
+    setError("");
+    setNotice("");
+    setAuthConfigError("");
+  };
+
   if (authLoading) {
     return <main className="auth-shell"><section className="auth-card"><p>Loading authentication…</p></section></main>;
   }
 
   if (isAdminRoute && !adminSession?.token) {
     return (
-      <AdminAuthShell
-        form={adminAuthForm}
-        loading={adminSubmitting}
-        error={error}
-        onChange={setAdminAuthForm}
-        onSubmit={handleAdminAuthSubmit}
-        onBackToUser={() => navigateTo("/")}
-      />
+      <>
+        <AdminAuthShell
+          form={adminAuthForm}
+          loading={adminSubmitting}
+          error={error}
+          onChange={setAdminAuthForm}
+          onSubmit={handleAdminAuthSubmit}
+          onBackToUser={() => navigateTo("/")}
+        />
+        <NotificationPopup type={notificationType} message={notificationMessage} onDismiss={dismissNotification} />
+      </>
     );
   }
 
   if (!isAdminRoute && !session?.access_token && !adminSession?.token) {
     return (
-      <AuthShell
-        mode={authMode}
-        form={authForm}
-        loading={authSubmitting}
-        error={error || authConfigError}
-        onModeChange={setAuthMode}
-        onChange={setAuthForm}
-        onSubmit={handleAuthSubmit}
-        onOpenAdmin={() => navigateTo("/admin")}
-      />
+      <>
+        <AuthShell
+          mode={authMode}
+          form={authForm}
+          loading={authSubmitting}
+          error={error || authConfigError}
+          onModeChange={setAuthMode}
+          onChange={setAuthForm}
+          onSubmit={handleAuthSubmit}
+          onOpenAdmin={() => navigateTo("/admin")}
+        />
+        <NotificationPopup type={notificationType} message={notificationMessage} onDismiss={dismissNotification} />
+      </>
     );
   }
 
@@ -2237,9 +2288,6 @@ export default function App() {
             {isMobileSidebarOpen ? "x" : "="}
           </button>
         </div>
-
-        {error ? <div className="banner error">{error}</div> : null}
-        {notice ? <div className="banner success">{notice}</div> : null}
 
         {page === "Job Search" ? (
           <section className="grid two-up job-search-layout">
@@ -3224,6 +3272,7 @@ export default function App() {
           aria-label="Close sidebar"
         />
       ) : null}
+      <NotificationPopup type={notificationType} message={notificationMessage} onDismiss={dismissNotification} />
       </div>
     </div>
   );
