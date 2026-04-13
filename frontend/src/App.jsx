@@ -574,6 +574,15 @@ export default function App() {
   }, [error, notice, authConfigError]);
 
   useEffect(() => {
+    const shouldLockBody = isMobileSidebarOpen && window.innerWidth <= 1180;
+    document.body.classList.toggle("sidebar-open", shouldLockBody);
+
+    return () => {
+      document.body.classList.remove("sidebar-open");
+    };
+  }, [isMobileSidebarOpen]);
+
+  useEffect(() => {
     let isActive = true;
     let unsubscribe = null;
 

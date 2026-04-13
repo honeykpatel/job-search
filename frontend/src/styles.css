@@ -58,6 +58,11 @@ body {
     linear-gradient(180deg, #0d0d0e 0%, #080809 100%);
 }
 
+body.sidebar-open {
+  overflow: hidden;
+  touch-action: none;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -119,6 +124,7 @@ button {
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 14px;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .sidebar-top,
@@ -133,6 +139,8 @@ button {
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sidebar-top::-webkit-scrollbar {
