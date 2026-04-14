@@ -1511,9 +1511,13 @@ button {
 }
 
 .mobile-chat-log {
-  align-content: end;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   padding-top: 8px;
   padding-bottom: 6px;
+  scroll-padding-top: 76px;
+  scroll-padding-bottom: 112px;
 }
 
 .chat-message.user {
@@ -2029,6 +2033,52 @@ button {
     height: auto;
     max-height: none;
     min-height: 66vh;
+  }
+
+  .mobile-agent-panel {
+    height: calc(100dvh - 38px);
+    min-height: calc(100dvh - 38px);
+    max-height: calc(100dvh - 38px);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding-bottom: 0;
+  }
+
+  .mobile-agent-panel .chat-top-row {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    width: 100%;
+    padding-top: 4px;
+    padding-bottom: 10px;
+    background: linear-gradient(180deg, rgba(13, 13, 14, 0.99), rgba(13, 13, 14, 0.92) 78%, transparent);
+  }
+
+  .mobile-agent-panel .mobile-helper-list,
+  .mobile-agent-panel .mobile-helper-prompt,
+  .mobile-agent-panel .chat-empty-state,
+  .mobile-agent-panel .chat-message,
+  .mobile-agent-panel .timeline-event {
+    width: 100%;
+  }
+
+  .mobile-agent-panel .chat-log {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-agent-panel .chat-quick-actions {
+    margin-top: 0;
+  }
+
+  .mobile-agent-panel .chat-compose-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    background: linear-gradient(0deg, rgba(13, 13, 14, 0.99), rgba(13, 13, 14, 0.92) 68%, transparent);
   }
 
   .admin-toolbar,

@@ -808,7 +808,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [page, selectedThreadId, selectedThread?.messages]);
+  }, [page, mobileAgentTab, selectedThreadId, combinedThreadMessages.length]);
 
   useEffect(() => {
     const chatLog = agentChatLogRef.current;
@@ -822,7 +822,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [agentThread?.messages, isDesktopViewport, session?.access_token, isAdminRoute]);
+  }, [agentCombinedThreadMessages.length, isDesktopViewport, session?.access_token, isAdminRoute]);
 
   async function bootstrap(accessToken) {
     try {
@@ -1956,7 +1956,7 @@ export default function App() {
       <div
         className={`panel chat-panel agent-chat-panel ${thread?.thread_type === "general" ? "agent-chat-panel-agent" : ""} ${
           isDesktopRail ? "desktop-agent-panel" : ""
-        }`}
+        } ${isMobileAgentView ? "mobile-agent-panel" : ""}`}
       >
         <div className="chat-top-row">
           <div className={`desktop-agent-heading ${isMobileAgentView ? "mobile-agent-heading" : ""}`}>
@@ -2101,21 +2101,21 @@ export default function App() {
                 key={`${prompt}-${index}`}
                 type="button"
                 className="quick-prompt"
-                onClick={() => setChatInput(prompt)}
+                onClick={() => setInputValue(prompt)}
               >
                 {prompt}
               </button>
             ))}
           </div>
         </div>
-        <form className="chat-compose chat-compose-bar" onSubmit={handleSendChat}>
-            <textarea
-              rows="3"
-              value={inputValue}
-              onChange={(event) => setInputValue(event.target.value)}
-              onWheel={forwardScrollToChat}
-              placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
-            />
+        <form className="chat-compose chat-compose-bar" onSubmit={onSubmit}>
+          <textarea
+            rows="3"
+            value={inputValue}
+            onChange={(event) => setInputValue(event.target.value)}
+            onWheel={forwardScrollToChat}
+            placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
+          />
           <button className="action-button primary" type="submit" disabled={sending || !threadId}>
             {sending ? "Sending..." : "Send"}
           </button>
