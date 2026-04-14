@@ -761,6 +761,31 @@ button {
   margin-top: 10px;
   padding-top: 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+  gap: 10px;
+}
+
+.desktop-helper-list-wrap {
+  min-height: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.desktop-helper-list-wrap::-webkit-scrollbar {
+  width: 10px;
+}
+
+.desktop-helper-list-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.desktop-helper-panel .sidebar-inline-section {
+  padding-top: 0;
+}
+
+.desktop-helper-panel .sidebar-list {
+  gap: 8px;
 }
 
 .sidebar-bottom {

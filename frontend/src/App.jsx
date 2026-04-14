@@ -2400,10 +2400,9 @@ export default function App() {
                   </div>
                   <span className="sidebar-chip">{jobThreads.length}</span>
                 </div>
-                <div className="sidebar-note">
-                  Keep the main strategist pinned on the right and switch this left rail between job-specific helpers.
+                <div className="desktop-helper-list-wrap">
+                  {renderHelperSidebarItems()}
                 </div>
-                {renderHelperSidebarItems()}
               </section>
             ) : null}
           </div>
