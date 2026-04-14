@@ -527,6 +527,7 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.innerWidth > DESKTOP_BREAKPOINT);
   const [isDesktopAgentCollapsed, setIsDesktopAgentCollapsed] = useState(false);
+  const [mobileAgentTab, setMobileAgentTab] = useState("agent");
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
@@ -1705,6 +1706,18 @@ export default function App() {
     }
   }, [mainAgentThread?.id, selectedThreadId, showDesktopAgentRail]);
 
+  useEffect(() => {
+    if (isDesktopViewport || page !== "Agent") {
+      return;
+    }
+
+    if (selectedThread?.thread_type === "general") {
+      setMobileAgentTab("agent");
+    } else if (selectedThread?.thread_type) {
+      setMobileAgentTab("helper");
+    }
+  }, [isDesktopViewport, page, selectedThread?.thread_type]);
+
   function forwardScrollToChat(event) {
     if (!chatLogRef.current) {
       return;
@@ -1812,11 +1825,70 @@ export default function App() {
     );
   }
 
+  function renderMobileHelperList() {
+    return (
+      <div className="mobile-helper-list">
+        {jobThreads.length ? (
+          jobThreads.map((thread) => {
+            const job = jobsById[thread.job_id];
+            const resume = resumesById[thread.resume_id];
+            const helperTitle = `${job?.title || "Untitled"} @ ${job?.company || "Unknown"}`;
+            const helperResume = resume?.filename || "No resume";
+
+            return (
+              <button
+                key={thread.id}
+                type="button"
+                className={`mobile-helper-button ${selectedThreadId === thread.id ? "active" : ""}`}
+                onClick={() => setSelectedThreadId(thread.id)}
+              >
+                <span className="mobile-helper-title">{helperTitle}</span>
+                <span className="mobile-helper-meta">{helperResume}</span>
+              </button>
+            );
+          })
+        ) : (
+          <div className="chat-empty-state mobile-helper-empty">
+            <p className="chat-empty-title">No helpers yet.</p>
+            <p className="muted">Create a helper from a saved job and resume to start focused role-specific chats.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderAgentPanel(isDesktopRail = false) {
+    const isMobileAgentView = !isDesktopRail && !isDesktopViewport;
+    const showingMobileHelperTab = isMobileAgentView && mobileAgentTab === "helper";
+    const showChatBody = !showingMobileHelperTab || selectedThread?.thread_type !== "general";
+
     return (
       <div className={`panel chat-panel agent-chat-panel ${isDesktopRail ? "desktop-agent-panel" : ""}`}>
         <div className="chat-top-row">
-          <div className="desktop-agent-heading">
+          <div className={`desktop-agent-heading ${isMobileAgentView ? "mobile-agent-heading" : ""}`}>
+            {isMobileAgentView ? (
+              <div className="mobile-agent-toggle" role="tablist" aria-label="Agent mode">
+                <button
+                  type="button"
+                  className={`mobile-agent-toggle-button ${mobileAgentTab === "agent" ? "active" : ""}`}
+                  onClick={() => {
+                    setMobileAgentTab("agent");
+                    if (mainAgentThread?.id) {
+                      setSelectedThreadId(mainAgentThread.id);
+                    }
+                  }}
+                >
+                  Agent
+                </button>
+                <button
+                  type="button"
+                  className={`mobile-agent-toggle-button ${mobileAgentTab === "helper" ? "active" : ""}`}
+                  onClick={() => setMobileAgentTab("helper")}
+                >
+                  Helper
+                </button>
+              </div>
+            ) : null}
             <span className={`sidebar-type-badge ${selectedThread?.thread_type === "general" ? "deep" : "job"}`}>
               {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
             </span>
@@ -1863,32 +1935,40 @@ export default function App() {
             ) : null}
           </div>
         </div>
-        <div className="chat-log" ref={chatLogRef}>
-          {combinedThreadMessages.length ? (
-            combinedThreadMessages.map((message) =>
-              message.role === "timeline_event" ? (
-                <div key={message.id} className="timeline-event">
-                  <span>{message.content}</span>
-                </div>
-              ) : (
-                <div key={message.id} className={`chat-message ${message.role}`}>
-                  <MarkdownMessage content={message.content} />
-                </div>
+        {showingMobileHelperTab ? renderMobileHelperList() : null}
+        {showChatBody ? (
+          <div className="chat-log" ref={chatLogRef}>
+            {combinedThreadMessages.length ? (
+              combinedThreadMessages.map((message) =>
+                message.role === "timeline_event" ? (
+                  <div key={message.id} className="timeline-event">
+                    <span>{message.content}</span>
+                  </div>
+                ) : (
+                  <div key={message.id} className={`chat-message ${message.role}`}>
+                    <MarkdownMessage content={message.content} />
+                  </div>
+                )
               )
-            )
-          ) : (
-            <div className="chat-empty-state">
-              <p className="chat-empty-title">
-                {selectedThread?.thread_type === "general" ? "Start with Agent." : "Start with this Helper."}
-              </p>
-              <p className="muted">
-                {selectedThread?.thread_type === "general"
-                  ? "Ask for pipeline strategy, prioritization, follow-up planning, or a weekly search plan."
-                  : "Ask about this specific role, resume fit, follow-ups, or interview prep."}
-              </p>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="chat-empty-state">
+                <p className="chat-empty-title">
+                  {selectedThread?.thread_type === "general" ? "Start with Agent." : "Start with this Helper."}
+                </p>
+                <p className="muted">
+                  {selectedThread?.thread_type === "general"
+                    ? "Ask for pipeline strategy, prioritization, follow-up planning, or a weekly search plan."
+                    : "Ask about this specific role, resume fit, follow-ups, or interview prep."}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="chat-empty-state mobile-helper-prompt">
+            <p className="chat-empty-title">Choose a helper.</p>
+            <p className="muted">Pick one from the list above to open that helper chat.</p>
+          </div>
+        )}
         {pendingAction ? renderPendingActionPreview() : null}
         <div className="chat-quick-actions" onWheel={forwardScrollToChat}>
           <div className="chat-quick-actions-track">
