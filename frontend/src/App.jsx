@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Agent"];
+const DESKTOP_BREAKPOINT = 1180;
 const APPLICATION_STATUSES = ["saved", "applied", "interview", "offer", "rejected", "archived"];
 const PROFILE_FIELD_SECTIONS = [
   ["target_roles", "Target roles"],
@@ -523,6 +524,8 @@ export default function App() {
   const [openSidebarItemMenu, setOpenSidebarItemMenu] = useState(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.innerWidth > DESKTOP_BREAKPOINT);
+  const [isDesktopAgentCollapsed, setIsDesktopAgentCollapsed] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const chatLogRef = useRef(null);
@@ -560,6 +563,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      setIsDesktopViewport(window.innerWidth > DESKTOP_BREAKPOINT);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
     if (!error && !notice && !authConfigError) {
       return undefined;
     }
@@ -574,13 +586,21 @@ export default function App() {
   }, [error, notice, authConfigError]);
 
   useEffect(() => {
-    const shouldLockBody = isMobileSidebarOpen && window.innerWidth <= 1180;
+    const shouldLockBody = isMobileSidebarOpen && window.innerWidth <= DESKTOP_BREAKPOINT;
     document.body.classList.toggle("sidebar-open", shouldLockBody);
 
     return () => {
       document.body.classList.remove("sidebar-open");
     };
   }, [isMobileSidebarOpen]);
+
+  useEffect(() => {
+    if (isDesktopViewport) {
+      setIsMobileSidebarOpen(false);
+    } else {
+      setIsDesktopAgentCollapsed(false);
+    }
+  }, [isDesktopViewport]);
 
   useEffect(() => {
     let isActive = true;
@@ -1655,11 +1675,14 @@ export default function App() {
   });
   const generalThreads = filteredThreads.filter((thread) => thread.thread_type === "general");
   const jobThreads = filteredThreads.filter((thread) => thread.thread_type !== "general");
+  const mainAgentThread = threads.find((thread) => thread.thread_type === "general") || generalThreads[0] || null;
   const jobsById = Object.fromEntries(jobs.map((job) => [job.id, job]));
   const resumesById = Object.fromEntries(resumes.map((resume) => [resume.id, resume]));
   const selectedSessionJob = selectedSessionJobs.find((job) => job.id === selectedSessionJobId) || selectedSessionJobs[0] || null;
   const bestMatchScore = matches.length ? Math.max(...matches.map((item) => Number(item.score || 0))) : null;
   const leastMatchScore = matches.length ? Math.min(...matches.map((item) => Number(item.score || 0))) : null;
+  const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+  const showDesktopHelperSidebarSection = showDesktopAgentRail;
   const quickPrompts =
     selectedThread?.thread_type === "general"
       ? [
@@ -1676,12 +1699,225 @@ export default function App() {
         ];
   const marqueePrompts = [...quickPrompts, ...quickPrompts];
 
+  useEffect(() => {
+    if (showDesktopAgentRail && !selectedThreadId && mainAgentThread?.id) {
+      setSelectedThreadId(mainAgentThread.id);
+    }
+  }, [mainAgentThread?.id, selectedThreadId, showDesktopAgentRail]);
+
   function forwardScrollToChat(event) {
     if (!chatLogRef.current) {
       return;
     }
     event.preventDefault();
     chatLogRef.current.scrollTop += event.deltaY;
+  }
+
+  useEffect(() => {
+    if (!showDesktopAgentRail || page !== "Agent") {
+      return;
+    }
+
+    setPage("Job Search");
+    navigateTo("/");
+  }, [page, showDesktopAgentRail]);
+
+  function renderHelperSidebarItems() {
+    return (
+      <>
+        <div className="sidebar-inline-section">
+          <span className="sidebar-group-label">Helpers</span>
+          <button
+            className="action-button primary sidebar-action"
+            type="button"
+            onClick={() => setShowNewJobAgentModal(true)}
+          >
+            New Helper
+          </button>
+        </div>
+
+        <div className="sidebar-list">
+          {jobThreads.length ? (
+            jobThreads.map((thread) => {
+              const job = jobsById[thread.job_id];
+              const resume = resumesById[thread.resume_id];
+              const helperTitle = `${job?.title || "Untitled"} @ ${job?.company || "Unknown"}`;
+              const helperStatus = job?.application_status || "saved";
+              const helperResume = resume?.filename || "No resume";
+              const menuId = `thread-${thread.id}`;
+
+              return (
+                <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-flat">
+                  <button
+                    type="button"
+                    className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedThreadId(thread.id);
+                      closeMobileSidebar();
+                    }}
+                    title={`${helperTitle} | ${helperResume}`}
+                  >
+                    <span className="sidebar-item-title">{helperTitle}</span>
+                    <span className="sidebar-item-meta sidebar-helper-meta">
+                      <span className="sidebar-type-badge status">{helperStatus}</span>
+                      <span>{helperResume}</span>
+                    </span>
+                  </button>
+                  <div className="sidebar-item-actions">
+                    <button
+                      type="button"
+                      className={`icon-button sidebar-item-menu-trigger ${openSidebarItemMenu === menuId ? "active" : ""}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
+                      }}
+                      aria-label={`Open helper actions for ${helperTitle}`}
+                    >
+                      ...
+                    </button>
+                    {openSidebarItemMenu === menuId ? (
+                      <div className="sidebar-item-menu">
+                        <button
+                          type="button"
+                          className="sidebar-item-menu-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRenameThread(thread.id, helperTitle);
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="sidebar-item-menu-button destructive"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteThread(thread.id);
+                            setOpenSidebarItemMenu(null);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="sidebar-empty">No helpers yet.</p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderAgentPanel(isDesktopRail = false) {
+    return (
+      <div className={`panel chat-panel agent-chat-panel ${isDesktopRail ? "desktop-agent-panel" : ""}`}>
+        <div className="chat-top-row">
+          <div className="desktop-agent-heading">
+            <span className={`sidebar-type-badge ${selectedThread?.thread_type === "general" ? "deep" : "job"}`}>
+              {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
+            </span>
+            {isDesktopRail && selectedThread?.thread_type !== "general" && mainAgentThread ? (
+              <button
+                type="button"
+                className="desktop-agent-home"
+                onClick={() => setSelectedThreadId(mainAgentThread.id)}
+              >
+                Back to Agent
+              </button>
+            ) : null}
+          </div>
+          <div className="chat-thread-actions">
+            <button
+              className={`icon-button chat-menu-trigger ${showChatMenu ? "active" : ""}`}
+              type="button"
+              onClick={() => setShowChatMenu((current) => !current)}
+              aria-label="Open chat options"
+            >
+              ...
+            </button>
+            {showChatMenu ? (
+              <div className="chat-menu">
+                <label className="checkbox chat-menu-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showToolDebug}
+                    onChange={(event) => setShowToolDebug(event.target.checked)}
+                  />
+                  Show tools
+                </label>
+                <button
+                  className="chat-menu-button"
+                  type="button"
+                  onClick={() => {
+                    setShowChatMenu(false);
+                    void handleClearThread();
+                  }}
+                >
+                  Clear chat history
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="chat-log" ref={chatLogRef}>
+          {combinedThreadMessages.length ? (
+            combinedThreadMessages.map((message) =>
+              message.role === "timeline_event" ? (
+                <div key={message.id} className="timeline-event">
+                  <span>{message.content}</span>
+                </div>
+              ) : (
+                <div key={message.id} className={`chat-message ${message.role}`}>
+                  <MarkdownMessage content={message.content} />
+                </div>
+              )
+            )
+          ) : (
+            <div className="chat-empty-state">
+              <p className="chat-empty-title">
+                {selectedThread?.thread_type === "general" ? "Start with Agent." : "Start with this Helper."}
+              </p>
+              <p className="muted">
+                {selectedThread?.thread_type === "general"
+                  ? "Ask for pipeline strategy, prioritization, follow-up planning, or a weekly search plan."
+                  : "Ask about this specific role, resume fit, follow-ups, or interview prep."}
+              </p>
+            </div>
+          )}
+        </div>
+        {pendingAction ? renderPendingActionPreview() : null}
+        <div className="chat-quick-actions" onWheel={forwardScrollToChat}>
+          <div className="chat-quick-actions-track">
+            {marqueePrompts.map((prompt, index) => (
+              <button
+                key={`${prompt}-${index}`}
+                type="button"
+                className="quick-prompt"
+                onClick={() => setChatInput(prompt)}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+        <form className="chat-compose chat-compose-bar" onSubmit={handleSendChat}>
+          <textarea
+            rows="3"
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onWheel={forwardScrollToChat}
+            placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
+          />
+          <button className="action-button primary" type="submit" disabled={sendingChat || !selectedThreadId}>
+            {sendingChat ? "Sending..." : "Send"}
+          </button>
+        </form>
+      </div>
+    );
   }
 
   async function handleAuthSubmit(event) {
@@ -1812,8 +2048,9 @@ export default function App() {
     );
   }
 
+  const visiblePages = showDesktopAgentRail ? PAGES.filter((item) => item !== "Agent") : PAGES;
   const navPages = session?.access_token
-    ? [...PAGES, ...(adminSession?.token ? ["Admin"] : [])]
+    ? [...visiblePages, ...(adminSession?.token ? ["Admin"] : [])]
     : ["Admin"];
   const currentUserFullName =
     String(accountForm.full_name || "").trim() || String(session?.user?.user_metadata?.full_name || "").trim();
@@ -1831,7 +2068,11 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="shell">
+      <div
+        className={`shell ${showDesktopAgentRail ? "with-desktop-agent-rail" : ""} ${
+          showDesktopAgentRail && isDesktopAgentCollapsed ? "desktop-agent-rail-collapsed" : ""
+        }`}
+      >
         <aside className={`sidebar ${isMobileSidebarOpen ? "open" : ""}`}>
           <div className="sidebar-top">
             <div className="sidebar-title-row">
@@ -1906,9 +2147,9 @@ export default function App() {
           ) : null}
           {page === "Agent" ? (
             <>
-              <div className="sidebar-list">
-                {generalThreads.length ? (
-                  generalThreads.map((thread) => (
+              {generalThreads.length ? (
+                <div className="sidebar-list">
+                  {generalThreads.map((thread) => (
                     <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-no-actions">
                       <button
                         type="button"
@@ -1924,92 +2165,12 @@ export default function App() {
                         </span>
                       </button>
                     </div>
-                  ))
-                ) : (
-                  <p className="sidebar-empty">Agent is created automatically for this user.</p>
-                )}
-
-                <div className="sidebar-inline-section">
-                  <span className="sidebar-group-label">New Helper</span>
-                  <button
-                    className="action-button primary sidebar-action"
-                    type="button"
-                    onClick={() => setShowNewJobAgentModal(true)}
-                  >
-                    New Helper
-                  </button>
+                  ))}
                 </div>
-
-                {jobThreads.length ? (
-                  jobThreads.map((thread) => {
-                    const job = jobsById[thread.job_id];
-                    const resume = resumesById[thread.resume_id];
-                    const helperTitle = `${job?.title || "Untitled"} @ ${job?.company || "Unknown"}`;
-                    const helperStatus = job?.application_status || "saved";
-                    const helperResume = resume?.filename || "No resume";
-                    const menuId = `thread-${thread.id}`;
-                    return (
-                      <div key={thread.id} className="sidebar-item-row sidebar-item-row-helper sidebar-item-row-flat">
-                        <button
-                          type="button"
-                          className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
-                          onClick={() => {
-                            setSelectedThreadId(thread.id);
-                            closeMobileSidebar();
-                          }}
-                          title={`${helperTitle} | ${helperResume}`}
-                        >
-                          <span className="sidebar-item-title">{helperTitle}</span>
-                          <span className="sidebar-item-meta sidebar-helper-meta">
-                            <span className="sidebar-type-badge status">{helperStatus}</span>
-                            <span>{helperResume}</span>
-                          </span>
-                        </button>
-                        <div className="sidebar-item-actions">
-                          <button
-                            type="button"
-                            className={`icon-button sidebar-item-menu-trigger ${openSidebarItemMenu === menuId ? "active" : ""}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
-                            }}
-                            aria-label={`Open options for helper ${thread.id}`}
-                          >
-                            ...
-                          </button>
-                          {openSidebarItemMenu === menuId ? (
-                            <div className="sidebar-item-menu">
-                              <button
-                                type="button"
-                                className="sidebar-item-menu-button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void handleRenameThread(thread.id, thread.title || helperTitle);
-                                }}
-                              >
-                                Rename
-                              </button>
-                              <button
-                                type="button"
-                                className="sidebar-item-menu-button destructive"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void handleDeleteThread(thread.id);
-                                  setOpenSidebarItemMenu(null);
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="sidebar-empty">No helpers yet.</p>
-                )}
-              </div>
+              ) : (
+                <p className="sidebar-empty">Agent is created automatically for this user.</p>
+              )}
+              {renderHelperSidebarItems()}
             </>
           ) : page === "Job Search" ? (
             <>
@@ -2230,6 +2391,21 @@ export default function App() {
             </div>
           )}
             </section>
+            {showDesktopHelperSidebarSection ? (
+              <section className="sidebar-card sidebar-panel desktop-helper-panel">
+                <div className="sidebar-section-head">
+                  <div>
+                    <p className="eyebrow">Focused Threads</p>
+                    <h3>Helpers</h3>
+                  </div>
+                  <span className="sidebar-chip">{jobThreads.length}</span>
+                </div>
+                <div className="sidebar-note">
+                  Keep the main strategist pinned on the right and switch this left rail between job-specific helpers.
+                </div>
+                {renderHelperSidebarItems()}
+              </section>
+            ) : null}
           </div>
 
           <div className="sidebar-bottom">
@@ -3007,105 +3183,26 @@ export default function App() {
           </section>
         ) : null}
 
-        {page === "Agent" ? (
+        {page === "Agent" && !showDesktopAgentRail ? (
           <section className="grid">
-            <div className="panel chat-panel agent-chat-panel">
-              <div className="chat-top-row">
-                <span className={`sidebar-type-badge ${selectedThread?.thread_type === "general" ? "deep" : "job"}`}>
-                  {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
-                </span>
-                <div className="chat-thread-actions">
-                  <button
-                    className={`icon-button chat-menu-trigger ${showChatMenu ? "active" : ""}`}
-                    type="button"
-                    onClick={() => setShowChatMenu((current) => !current)}
-                    aria-label="Open chat options"
-                  >
-                    ...
-                  </button>
-                  {showChatMenu ? (
-                    <div className="chat-menu">
-                      <label className="checkbox chat-menu-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={showToolDebug}
-                          onChange={(event) => setShowToolDebug(event.target.checked)}
-                        />
-                        Show tools
-                      </label>
-                      <button
-                        className="chat-menu-button"
-                        type="button"
-                        onClick={() => {
-                          setShowChatMenu(false);
-                          void handleClearThread();
-                        }}
-                      >
-                        Clear chat history
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="chat-log" ref={chatLogRef}>
-                {combinedThreadMessages.length ? (
-                  combinedThreadMessages.map((message) =>
-                    message.role === "timeline_event" ? (
-                      <div key={message.id} className="timeline-event">
-                        <span>{message.content}</span>
-                      </div>
-                    ) : (
-                      <div key={message.id} className={`chat-message ${message.role}`}>
-                        <MarkdownMessage content={message.content} />
-                      </div>
-                    )
-                  )
-                ) : (
-                  <div className="chat-empty-state">
-                    <p className="chat-empty-title">
-                      {selectedThread?.thread_type === "general"
-                        ? "Start with Agent."
-                        : "Start with this Helper."}
-                    </p>
-                    <p className="muted">
-                      {selectedThread?.thread_type === "general"
-                        ? "Ask for pipeline strategy, prioritization, follow-up planning, or a weekly search plan."
-                        : "Ask about this specific role, resume fit, follow-ups, or interview prep."}
-                    </p>
-                  </div>
-                )}
-              </div>
-              {pendingAction ? renderPendingActionPreview() : null}
-              <div className="chat-quick-actions" onWheel={forwardScrollToChat}>
-                <div className="chat-quick-actions-track">
-                  {marqueePrompts.map((prompt, index) => (
-                    <button
-                      key={`${prompt}-${index}`}
-                      type="button"
-                      className="quick-prompt"
-                      onClick={() => setChatInput(prompt)}
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <form className="chat-compose chat-compose-bar" onSubmit={handleSendChat}>
-                <textarea
-                  rows="3"
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  onWheel={forwardScrollToChat}
-                  placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
-                />
-                <button className="action-button primary" type="submit" disabled={sendingChat || !selectedThreadId}>
-                  {sendingChat ? "Sending..." : "Send"}
-                </button>
-              </form>
-            </div>
+            {renderAgentPanel()}
           </section>
         ) : null}
       </main>
+      {showDesktopAgentRail ? (
+        <aside className={`desktop-agent-rail ${isDesktopAgentCollapsed ? "collapsed" : ""}`}>
+          <button
+            type="button"
+            className="desktop-agent-toggle"
+            onClick={() => setIsDesktopAgentCollapsed((current) => !current)}
+            aria-label={isDesktopAgentCollapsed ? "Expand agent rail" : "Collapse agent rail"}
+            title={isDesktopAgentCollapsed ? "Expand Agent" : "Collapse Agent"}
+          >
+            {isDesktopAgentCollapsed ? "‹" : "›"}
+          </button>
+          {!isDesktopAgentCollapsed ? renderAgentPanel(true) : null}
+        </aside>
+      ) : null}
 
       {showNewJobAgentModal ? (
         <div className="modal-backdrop" onClick={() => setShowNewJobAgentModal(false)}>

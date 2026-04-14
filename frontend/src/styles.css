@@ -107,6 +107,14 @@ button {
   background: transparent;
 }
 
+.shell.with-desktop-agent-rail {
+  grid-template-columns: 288px minmax(0, 1fr) 288px;
+}
+
+.shell.desktop-agent-rail-collapsed {
+  grid-template-columns: 288px minmax(0, 1fr) 52px;
+}
+
 .app-shell {
   min-height: 100vh;
 }
@@ -263,6 +271,11 @@ button {
   max-width: 1280px;
   width: 100%;
   margin: 0 auto;
+}
+
+.with-desktop-agent-rail .content {
+  max-width: none;
+  margin: 0;
 }
 
 .mobile-topbar {
@@ -744,6 +757,12 @@ button {
   justify-content: center;
 }
 
+.desktop-helper-panel {
+  margin-top: 10px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
 .sidebar-bottom {
   position: relative;
   z-index: 2;
@@ -1152,6 +1171,68 @@ button {
   margin: 0 auto;
   padding: 8px 0 0;
   background: linear-gradient(180deg, rgba(13, 13, 14, 0.98), rgba(13, 13, 14, 0.82) 72%, transparent);
+}
+
+.desktop-agent-rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  padding: 14px 14px 14px 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(180deg, rgba(17, 17, 18, 0.98), rgba(10, 10, 10, 0.98)),
+    var(--bg-panel);
+  overflow: hidden;
+}
+
+.desktop-agent-rail.collapsed {
+  padding-right: 8px;
+}
+
+.desktop-agent-toggle {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  z-index: 4;
+  width: 28px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+  background: rgba(22, 22, 24, 0.98);
+  color: var(--text-strong);
+}
+
+.desktop-agent-panel {
+  height: calc(100vh - 28px);
+  max-height: calc(100vh - 28px);
+  padding: 0 0 0 26px;
+}
+
+.desktop-agent-panel .chat-top-row,
+.desktop-agent-panel .chat-message,
+.desktop-agent-panel .timeline-event {
+  width: 100%;
+}
+
+.desktop-agent-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.desktop-agent-home {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 0.76rem;
 }
 
 .chat-thread-actions {
