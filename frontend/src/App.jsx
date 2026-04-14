@@ -808,7 +808,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [page, mobileAgentTab, selectedThreadId, combinedThreadMessages.length]);
+  }, [page, mobileAgentTab, selectedThreadId, selectedThread?.messages]);
 
   useEffect(() => {
     const chatLog = agentChatLogRef.current;
@@ -822,7 +822,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [agentCombinedThreadMessages.length, isDesktopViewport, session?.access_token, isAdminRoute]);
+  }, [agentThread?.messages, isDesktopViewport, session?.access_token, isAdminRoute]);
 
   async function bootstrap(accessToken) {
     try {
