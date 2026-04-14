@@ -1730,9 +1730,6 @@ export default function App() {
     return combinedMessages;
   }
 
-  const combinedThreadMessages = buildCombinedThreadMessages(selectedThread, selectedThreadId);
-  const agentCombinedThreadMessages = buildCombinedThreadMessages(agentThread, mainAgentThread?.id);
-
   const applicationStats = {
     tracked: applicationJobs.length,
     applied: applicationJobs.filter((item) => item.application_status === "applied").length,
@@ -1759,6 +1756,8 @@ export default function App() {
   const generalThreads = filteredThreads.filter((thread) => thread.thread_type === "general");
   const jobThreads = filteredThreads.filter((thread) => thread.thread_type !== "general");
   const mainAgentThread = threads.find((thread) => thread.thread_type === "general") || generalThreads[0] || null;
+  const combinedThreadMessages = buildCombinedThreadMessages(selectedThread, selectedThreadId);
+  const agentCombinedThreadMessages = buildCombinedThreadMessages(agentThread, mainAgentThread?.id);
   const jobsById = Object.fromEntries(jobs.map((job) => [job.id, job]));
   const resumesById = Object.fromEntries(resumes.map((resume) => [resume.id, resume]));
   const selectedSessionJob = selectedSessionJobs.find((job) => job.id === selectedSessionJobId) || selectedSessionJobs[0] || null;
