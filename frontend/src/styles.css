@@ -1212,6 +1212,103 @@ button {
   width: 100%;
 }
 
+.desktop-agent-panel .sidebar-type-badge,
+.desktop-agent-panel .desktop-agent-home,
+.desktop-agent-panel .chat-menu-button,
+.desktop-agent-panel .chat-menu-checkbox,
+.desktop-agent-panel .quick-prompt,
+.desktop-agent-panel .timeline-event span {
+  font-size: 0.72rem;
+}
+
+.desktop-agent-panel .chat-log {
+  gap: 14px;
+}
+
+.desktop-agent-panel .chat-message.assistant {
+  padding-left: 52px;
+}
+
+.desktop-agent-panel .chat-message.assistant::before {
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+}
+
+.desktop-agent-panel .chat-message.user .markdown-message {
+  max-width: 100%;
+  padding: 12px 14px;
+  border-radius: 18px;
+}
+
+.desktop-agent-panel .chat-message.tool {
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.desktop-agent-panel .markdown-message,
+.desktop-agent-panel .markdown-message > div {
+  gap: 8px;
+}
+
+.desktop-agent-panel .markdown-message h1 {
+  font-size: 0.96rem;
+}
+
+.desktop-agent-panel .markdown-message h2 {
+  font-size: 0.9rem;
+}
+
+.desktop-agent-panel .markdown-message h3 {
+  font-size: 0.84rem;
+}
+
+.desktop-agent-panel .markdown-message p,
+.desktop-agent-panel .markdown-message li,
+.desktop-agent-panel .markdown-message code {
+  font-size: 0.82rem;
+}
+
+.desktop-agent-panel .markdown-message p,
+.desktop-agent-panel .markdown-message li {
+  line-height: 1.5;
+}
+
+.desktop-agent-panel .markdown-message ul,
+.desktop-agent-panel .markdown-message ol {
+  padding-left: 1rem;
+  gap: 4px;
+}
+
+.desktop-agent-panel .markdown-code-block {
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.desktop-agent-panel .markdown-code-lang {
+  min-height: 22px;
+  margin-bottom: 8px;
+  font-size: 0.68rem;
+}
+
+.desktop-agent-panel .chat-compose-bar {
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 16px;
+}
+
+.desktop-agent-panel .chat-compose-bar textarea {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.desktop-agent-panel .chat-compose-bar .action-button {
+  min-width: 64px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+}
+
 .desktop-agent-heading {
   display: flex;
   align-items: center;
