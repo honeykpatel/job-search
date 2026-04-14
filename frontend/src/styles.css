@@ -1156,6 +1156,13 @@ button {
   border-bottom: 0;
 }
 
+.agent-chat-panel-agent {
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(125, 225, 167, 0.55);
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px rgba(125, 225, 167, 0.08);
+}
+
 .chat-top-row {
   align-items: center;
   position: sticky;
@@ -1318,8 +1325,32 @@ button {
 
 .mobile-agent-heading {
   width: 100%;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
+  position: relative;
+}
+
+.mobile-agent-top-slot,
+.mobile-chat-thread-actions {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+}
+
+.mobile-agent-top-slot {
+  left: 0;
+}
+
+.mobile-chat-thread-actions {
+  right: 0;
+}
+
+.mobile-agent-toggle-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .mobile-agent-toggle {
@@ -1346,6 +1377,20 @@ button {
 .mobile-agent-toggle-button.active {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-strong);
+}
+
+.mobile-agent-back {
+  width: 34px;
+  height: 34px;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.mobile-agent-menu {
+  width: 34px;
+  height: 34px;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .desktop-agent-home {
@@ -1463,6 +1508,12 @@ button {
   margin: 0 auto;
   padding: 0;
   border-radius: 0;
+}
+
+.mobile-chat-log {
+  align-content: end;
+  padding-top: 8px;
+  padding-bottom: 6px;
 }
 
 .chat-message.user {

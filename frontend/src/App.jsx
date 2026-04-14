@@ -1860,38 +1860,73 @@ export default function App() {
   function renderAgentPanel(isDesktopRail = false) {
     const isMobileAgentView = !isDesktopRail && !isDesktopViewport;
     const showingMobileHelperTab = isMobileAgentView && mobileAgentTab === "helper";
-    const showChatBody = !showingMobileHelperTab || selectedThread?.thread_type !== "general";
+    const showingSelectedMobileHelper =
+      showingMobileHelperTab && selectedThread?.thread_type && selectedThread?.thread_type !== "general";
+    const showMobileHelperList = showingMobileHelperTab && !showingSelectedMobileHelper;
+    const showChatBody = !showingMobileHelperTab || showingSelectedMobileHelper;
 
     return (
-      <div className={`panel chat-panel agent-chat-panel ${isDesktopRail ? "desktop-agent-panel" : ""}`}>
+      <div
+        className={`panel chat-panel agent-chat-panel ${selectedThread?.thread_type === "general" ? "agent-chat-panel-agent" : ""} ${
+          isDesktopRail ? "desktop-agent-panel" : ""
+        }`}
+      >
         <div className="chat-top-row">
           <div className={`desktop-agent-heading ${isMobileAgentView ? "mobile-agent-heading" : ""}`}>
             {isMobileAgentView ? (
-              <div className="mobile-agent-toggle" role="tablist" aria-label="Agent mode">
-                <button
-                  type="button"
-                  className={`mobile-agent-toggle-button ${mobileAgentTab === "agent" ? "active" : ""}`}
-                  onClick={() => {
-                    setMobileAgentTab("agent");
-                    if (mainAgentThread?.id) {
-                      setSelectedThreadId(mainAgentThread.id);
-                    }
-                  }}
-                >
-                  Agent
-                </button>
-                <button
-                  type="button"
-                  className={`mobile-agent-toggle-button ${mobileAgentTab === "helper" ? "active" : ""}`}
-                  onClick={() => setMobileAgentTab("helper")}
-                >
-                  Helper
-                </button>
-              </div>
+              <>
+                <div className="mobile-agent-top-slot">
+                  <button
+                    type="button"
+                    className="icon-button mobile-agent-menu"
+                    onClick={() => setIsMobileSidebarOpen((current) => !current)}
+                    aria-label={isMobileSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                  >
+                    {isMobileSidebarOpen ? "x" : "="}
+                  </button>
+                </div>
+                <div className="mobile-agent-toggle-wrap">
+                  <div className="mobile-agent-toggle" role="tablist" aria-label="Agent mode">
+                    <button
+                      type="button"
+                      className={`mobile-agent-toggle-button ${mobileAgentTab === "agent" ? "active" : ""}`}
+                      onClick={() => {
+                        setMobileAgentTab("agent");
+                        if (mainAgentThread?.id) {
+                          setSelectedThreadId(mainAgentThread.id);
+                        }
+                      }}
+                    >
+                      Agent
+                    </button>
+                    <button
+                      type="button"
+                      className={`mobile-agent-toggle-button ${mobileAgentTab === "helper" ? "active" : ""}`}
+                      onClick={() => setMobileAgentTab("helper")}
+                    >
+                      Helper
+                    </button>
+                  </div>
+                </div>
+                <div className="mobile-chat-thread-actions">
+                  {showingSelectedMobileHelper ? (
+                    <button
+                      type="button"
+                      className="icon-button mobile-agent-back"
+                      onClick={() => setSelectedThreadId(null)}
+                      aria-label="Back to helper list"
+                    >
+                      ‹
+                    </button>
+                  ) : null}
+                </div>
+              </>
             ) : null}
-            <span className={`sidebar-type-badge ${selectedThread?.thread_type === "general" ? "deep" : "job"}`}>
-              {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
-            </span>
+            {!isMobileAgentView ? (
+              <span className={`sidebar-type-badge ${selectedThread?.thread_type === "general" ? "deep" : "job"}`}>
+                {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
+              </span>
+            ) : null}
             {isDesktopRail && selectedThread?.thread_type !== "general" && mainAgentThread ? (
               <button
                 type="button"
@@ -1902,42 +1937,44 @@ export default function App() {
               </button>
             ) : null}
           </div>
-          <div className="chat-thread-actions">
-            <button
-              className={`icon-button chat-menu-trigger ${showChatMenu ? "active" : ""}`}
-              type="button"
-              onClick={() => setShowChatMenu((current) => !current)}
-              aria-label="Open chat options"
-            >
-              ...
-            </button>
-            {showChatMenu ? (
-              <div className="chat-menu">
-                <label className="checkbox chat-menu-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showToolDebug}
-                    onChange={(event) => setShowToolDebug(event.target.checked)}
-                  />
-                  Show tools
-                </label>
-                <button
-                  className="chat-menu-button"
-                  type="button"
-                  onClick={() => {
-                    setShowChatMenu(false);
-                    void handleClearThread();
-                  }}
-                >
-                  Clear chat history
-                </button>
-              </div>
-            ) : null}
-          </div>
+          {!isMobileAgentView ? (
+            <div className="chat-thread-actions">
+              <button
+                className={`icon-button chat-menu-trigger ${showChatMenu ? "active" : ""}`}
+                type="button"
+                onClick={() => setShowChatMenu((current) => !current)}
+                aria-label="Open chat options"
+              >
+                ...
+              </button>
+              {showChatMenu ? (
+                <div className="chat-menu">
+                  <label className="checkbox chat-menu-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={showToolDebug}
+                      onChange={(event) => setShowToolDebug(event.target.checked)}
+                    />
+                    Show tools
+                  </label>
+                  <button
+                    className="chat-menu-button"
+                    type="button"
+                    onClick={() => {
+                      setShowChatMenu(false);
+                      void handleClearThread();
+                    }}
+                  >
+                    Clear chat history
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        {showingMobileHelperTab ? renderMobileHelperList() : null}
+        {showMobileHelperList ? renderMobileHelperList() : null}
         {showChatBody ? (
-          <div className="chat-log" ref={chatLogRef}>
+          <div className={`chat-log ${isMobileAgentView ? "mobile-chat-log" : ""}`} ref={chatLogRef}>
             {combinedThreadMessages.length ? (
               combinedThreadMessages.map((message) =>
                 message.role === "timeline_event" ? (
@@ -2539,16 +2576,18 @@ export default function App() {
         </aside>
 
         <main className="content">
-        <div className="mobile-topbar">
-          <button
-            className="icon-button mobile-sidebar-toggle"
-            type="button"
-            onClick={() => setIsMobileSidebarOpen((current) => !current)}
-            aria-label={isMobileSidebarOpen ? "Close sidebar" : "Open sidebar"}
-          >
-            {isMobileSidebarOpen ? "x" : "="}
-          </button>
-        </div>
+        {!(page === "Agent" && !isDesktopViewport) ? (
+          <div className="mobile-topbar">
+            <button
+              className="icon-button mobile-sidebar-toggle"
+              type="button"
+              onClick={() => setIsMobileSidebarOpen((current) => !current)}
+              aria-label={isMobileSidebarOpen ? "Close sidebar" : "Open sidebar"}
+            >
+              {isMobileSidebarOpen ? "x" : "="}
+            </button>
+          </div>
+        ) : null}
 
         {page === "Job Search" ? (
           <section className="grid two-up job-search-layout">
