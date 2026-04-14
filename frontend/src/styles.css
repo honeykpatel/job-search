@@ -191,7 +191,7 @@ button {
 
 .sidebar-card {
   min-height: 0;
-  height: 100%;
+  height: auto;
   padding: 6px 8px 0;
   background: transparent;
   border: 0;
