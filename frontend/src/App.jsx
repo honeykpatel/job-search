@@ -785,11 +785,16 @@ export default function App() {
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
-    if (!chatLog || page !== "Agent") {
+    if (!chatLog || (page !== "Agent" && !showDesktopAgentRail)) {
       return;
     }
-    chatLog.scrollTop = chatLog.scrollHeight;
-  }, [page, selectedThreadId, selectedThread?.messages]);
+
+    const rafId = window.requestAnimationFrame(() => {
+      chatLog.scrollTop = chatLog.scrollHeight;
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [page, selectedThreadId, combinedThreadMessages.length, showDesktopAgentRail]);
 
   async function bootstrap(accessToken) {
     try {
