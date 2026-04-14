@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Agent"];
+const MOBILE_PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Agent"];
+const DESKTOP_PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Helpers"];
 const DESKTOP_BREAKPOINT = 1180;
 const APPLICATION_STATUSES = ["saved", "applied", "interview", "offer", "rejected", "archived"];
 const PROFILE_FIELD_SECTIONS = [
@@ -1682,7 +1683,6 @@ export default function App() {
   const bestMatchScore = matches.length ? Math.max(...matches.map((item) => Number(item.score || 0))) : null;
   const leastMatchScore = matches.length ? Math.min(...matches.map((item) => Number(item.score || 0))) : null;
   const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
-  const showDesktopHelperSidebarSection = showDesktopAgentRail;
   const quickPrompts =
     selectedThread?.thread_type === "general"
       ? [
@@ -2048,7 +2048,7 @@ export default function App() {
     );
   }
 
-  const visiblePages = showDesktopAgentRail ? PAGES.filter((item) => item !== "Agent") : PAGES;
+  const visiblePages = showDesktopAgentRail ? DESKTOP_PAGES : MOBILE_PAGES;
   const navPages = session?.access_token
     ? [...visiblePages, ...(adminSession?.token ? ["Admin"] : [])]
     : ["Admin"];
@@ -2170,6 +2170,17 @@ export default function App() {
               ) : (
                 <p className="sidebar-empty">Agent is created automatically for this user.</p>
               )}
+              {renderHelperSidebarItems()}
+            </>
+          ) : page === "Helpers" ? (
+            <>
+              <div className="sidebar-section-head">
+                <div>
+                  <p className="eyebrow">Focused Threads</p>
+                  <h3>Helpers</h3>
+                </div>
+                <span className="sidebar-chip">{jobThreads.length}</span>
+              </div>
               {renderHelperSidebarItems()}
             </>
           ) : page === "Job Search" ? (
@@ -2391,20 +2402,6 @@ export default function App() {
             </div>
           )}
             </section>
-            {showDesktopHelperSidebarSection ? (
-              <section className="sidebar-card sidebar-panel desktop-helper-panel">
-                <div className="sidebar-section-head">
-                  <div>
-                    <p className="eyebrow">Focused Threads</p>
-                    <h3>Helpers</h3>
-                  </div>
-                  <span className="sidebar-chip">{jobThreads.length}</span>
-                </div>
-                <div className="desktop-helper-list-wrap">
-                  {renderHelperSidebarItems()}
-                </div>
-              </section>
-            ) : null}
           </div>
 
           <div className="sidebar-bottom">
@@ -2949,6 +2946,21 @@ export default function App() {
               <button className="action-button primary" type="button" onClick={handleSaveProfile}>
                 Save Profile
               </button>
+            </div>
+          </section>
+        ) : null}
+
+        {page === "Helpers" ? (
+          <section className="grid">
+            <div className="panel">
+              <div className="section-heading">
+                <h3>Helpers</h3>
+                <p>Select a helper from the left rail to work on role-specific strategy, outreach, and interview prep.</p>
+              </div>
+              <div className="meta-row">
+                <span className="status-pill">{jobThreads.length} saved helpers</span>
+                <span className="status-pill">Agent stays pinned on the right</span>
+              </div>
             </div>
           </section>
         ) : null}
