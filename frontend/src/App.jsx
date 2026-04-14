@@ -516,6 +516,7 @@ export default function App() {
 
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [selectedThread, setSelectedThread] = useState(null);
+  const [agentThread, setAgentThread] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [timelineEventsByThread, setTimelineEventsByThread] = useState({});
   const [showToolDebug, setShowToolDebug] = useState(false);
@@ -529,8 +530,11 @@ export default function App() {
   const [isDesktopAgentCollapsed, setIsDesktopAgentCollapsed] = useState(false);
   const [mobileAgentTab, setMobileAgentTab] = useState("agent");
   const [chatInput, setChatInput] = useState("");
+  const [agentChatInput, setAgentChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
+  const [sendingAgentChat, setSendingAgentChat] = useState(false);
   const chatLogRef = useRef(null);
+  const agentChatLogRef = useRef(null);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
   function navigateTo(nextPath) {
@@ -771,6 +775,7 @@ export default function App() {
   useEffect(() => {
     if (!session?.access_token) {
       setSelectedThread(null);
+      setAgentThread(null);
       setPendingAction(null);
       return;
     }
@@ -784,8 +789,15 @@ export default function App() {
   }, [selectedThreadId, session?.access_token]);
 
   useEffect(() => {
+    if (!showDesktopAgentRail || !mainAgentThread?.id) {
+      return;
+    }
+    void loadAgentThread(mainAgentThread.id);
+  }, [mainAgentThread?.id, session?.access_token, showDesktopAgentRail]);
+
+  useEffect(() => {
     const chatLog = chatLogRef.current;
-    if (!chatLog || (page !== "Agent" && !showDesktopAgentRail)) {
+    if (!chatLog || (page !== "Agent" && page !== "Helpers")) {
       return;
     }
 
@@ -794,7 +806,20 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [page, selectedThreadId, combinedThreadMessages.length, showDesktopAgentRail]);
+  }, [page, selectedThreadId, selectedThread?.messages, showDesktopAgentRail]);
+
+  useEffect(() => {
+    const chatLog = agentChatLogRef.current;
+    if (!chatLog || !showDesktopAgentRail) {
+      return;
+    }
+
+    const rafId = window.requestAnimationFrame(() => {
+      chatLog.scrollTop = chatLog.scrollHeight;
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [agentThread?.messages, showDesktopAgentRail]);
 
   async function bootstrap(accessToken) {
     try {
@@ -887,11 +912,25 @@ export default function App() {
     await loadApplicationJobs();
   }
 
+  async function fetchThread(threadId) {
+    return api(`/api/threads/${threadId}`, { accessToken: session?.access_token });
+  }
+
   async function loadThread(threadId) {
     try {
       setError("");
-      const data = await api(`/api/threads/${threadId}`, { accessToken: session?.access_token });
+      const data = await fetchThread(threadId);
       setSelectedThread(data);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function loadAgentThread(threadId) {
+    try {
+      setError("");
+      const data = await fetchThread(threadId);
+      setAgentThread(data);
     } catch (err) {
       setError(err.message);
     }
@@ -1137,7 +1176,7 @@ export default function App() {
       setSelectedThreadId(thread.id);
       setNewThreadForm({ job_id: "", resume_id: "" });
       setShowNewJobAgentModal(false);
-      setPage("Agent");
+      setPage(showDesktopAgentRail ? "Helpers" : "Agent");
     } catch (err) {
       setError(err.message);
     }
@@ -1168,6 +1207,33 @@ export default function App() {
       setError(err.message);
     } finally {
       setSendingChat(false);
+    }
+  }
+
+  async function handleSendAgentChat(event) {
+    event.preventDefault();
+    if (!mainAgentThread?.id || !agentChatInput.trim()) {
+      return;
+    }
+
+    try {
+      setSendingAgentChat(true);
+      setError("");
+      const response = await api(`/api/threads/${mainAgentThread.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: agentChatInput,
+          show_tool_debug: showToolDebug,
+        }),
+        accessToken: session?.access_token,
+      });
+      setAgentThread((current) => ({ ...(current || {}), messages: response.messages }));
+      setAgentChatInput("");
+      await refreshCollections();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSendingAgentChat(false);
     }
   }
 
@@ -1630,32 +1696,39 @@ export default function App() {
 
   const selectedApplicationJob =
     applicationJobs.find((job) => job.id === selectedApplicationJobId) || null;
-  const visibleThreadMessages = (selectedThread?.messages || []).filter(
-    (message) => showToolDebug || message.role !== "tool"
-  );
-  const threadTimelineEvents = timelineEventsByThread[selectedThreadId] || [];
-  const combinedThreadMessages = [];
+  function buildCombinedThreadMessages(threadData, threadId) {
+    const visibleMessages = (threadData?.messages || []).filter(
+      (message) => showToolDebug || message.role !== "tool"
+    );
+    const threadEvents = timelineEventsByThread[threadId] || [];
+    const combinedMessages = [];
 
-  visibleThreadMessages.forEach((message) => {
-    combinedThreadMessages.push(message);
-    threadTimelineEvents
-      .filter((event) => event.after_message_id === message.id)
-      .forEach((event) => {
-        combinedThreadMessages.push(event);
-      });
-  });
-
-  threadTimelineEvents
-    .filter(
-      (event) =>
-        !event.after_message_id ||
-        !visibleThreadMessages.some((message) => message.id === event.after_message_id)
-    )
-    .forEach((event) => {
-      if (!combinedThreadMessages.some((item) => item.id === event.id)) {
-        combinedThreadMessages.push(event);
-      }
+    visibleMessages.forEach((message) => {
+      combinedMessages.push(message);
+      threadEvents
+        .filter((event) => event.after_message_id === message.id)
+        .forEach((event) => {
+          combinedMessages.push(event);
+        });
     });
+
+    threadEvents
+      .filter(
+        (event) =>
+          !event.after_message_id ||
+          !visibleMessages.some((message) => message.id === event.after_message_id)
+      )
+      .forEach((event) => {
+        if (!combinedMessages.some((item) => item.id === event.id)) {
+          combinedMessages.push(event);
+        }
+      });
+
+    return combinedMessages;
+  }
+
+  const combinedThreadMessages = buildCombinedThreadMessages(selectedThread, selectedThreadId);
+  const agentCombinedThreadMessages = buildCombinedThreadMessages(agentThread, mainAgentThread?.id);
 
   const applicationStats = {
     tracked: applicationJobs.length,
@@ -1689,28 +1762,6 @@ export default function App() {
   const bestMatchScore = matches.length ? Math.max(...matches.map((item) => Number(item.score || 0))) : null;
   const leastMatchScore = matches.length ? Math.min(...matches.map((item) => Number(item.score || 0))) : null;
   const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
-  const quickPrompts =
-    selectedThread?.thread_type === "general"
-      ? [
-          "Summarize my full pipeline",
-          "What needs follow-up right now?",
-          "What should I prioritize this week?",
-          "Create a weekly search plan",
-        ]
-      : [
-          "What are the gaps for this role?",
-          "Draft a follow-up for this job",
-          "How should I prepare for this interview?",
-          "Update this application plan",
-        ];
-  const marqueePrompts = [...quickPrompts, ...quickPrompts];
-
-  useEffect(() => {
-    if (showDesktopAgentRail && !selectedThreadId && mainAgentThread?.id) {
-      setSelectedThreadId(mainAgentThread.id);
-    }
-  }, [mainAgentThread?.id, selectedThreadId, showDesktopAgentRail]);
-
   useEffect(() => {
     if (isDesktopViewport || page !== "Agent") {
       return;
@@ -1770,6 +1821,9 @@ export default function App() {
                     type="button"
                     className={`mini-button sidebar-item sidebar-helper-item ${selectedThreadId === thread.id ? "active" : ""}`}
                     onClick={() => {
+                      if (showDesktopAgentRail) {
+                        setPage("Helpers");
+                      }
                       setSelectedThreadId(thread.id);
                       closeMobileSidebar();
                     }}
@@ -1862,17 +1916,43 @@ export default function App() {
     );
   }
 
-  function renderAgentPanel(isDesktopRail = false) {
+  function renderAgentPanel({
+    isDesktopRail = false,
+    thread = selectedThread,
+    threadId = selectedThreadId,
+    messages = combinedThreadMessages,
+    inputValue = chatInput,
+    setInputValue = setChatInput,
+    onSubmit = handleSendChat,
+    sending = sendingChat,
+    logRef = chatLogRef,
+  } = {}) {
     const isMobileAgentView = !isDesktopRail && !isDesktopViewport;
     const showingMobileHelperTab = isMobileAgentView && mobileAgentTab === "helper";
     const showingSelectedMobileHelper =
-      showingMobileHelperTab && selectedThread?.thread_type && selectedThread?.thread_type !== "general";
+      showingMobileHelperTab && thread?.thread_type && thread?.thread_type !== "general";
     const showMobileHelperList = showingMobileHelperTab && !showingSelectedMobileHelper;
     const showChatBody = !showingMobileHelperTab || showingSelectedMobileHelper;
+    const quickPrompts =
+      thread?.thread_type === "general"
+        ? [
+            "Summarize my full pipeline",
+            "What needs follow-up right now?",
+            "What should I prioritize this week?",
+            "Create a weekly search plan",
+          ]
+        : [
+            "What are the gaps for this role?",
+            "Draft a follow-up for this job",
+            "How should I prepare for this interview?",
+            "Update this application plan",
+          ];
+    const marqueePrompts = [...quickPrompts, ...quickPrompts];
+    const showPendingAction = pendingAction && threadId === selectedThreadId;
 
     return (
       <div
-        className={`panel chat-panel agent-chat-panel ${selectedThread?.thread_type === "general" ? "agent-chat-panel-agent" : ""} ${
+        className={`panel chat-panel agent-chat-panel ${thread?.thread_type === "general" ? "agent-chat-panel-agent" : ""} ${
           isDesktopRail ? "desktop-agent-panel" : ""
         }`}
       >
@@ -1894,11 +1974,11 @@ export default function App() {
                   <div className="mobile-agent-toggle" role="tablist" aria-label="Agent mode">
                     <button
                       type="button"
-                      className={`mobile-agent-toggle-button ${mobileAgentTab === "agent" ? "active" : ""}`}
-                      onClick={() => {
-                        setMobileAgentTab("agent");
-                        if (mainAgentThread?.id) {
-                          setSelectedThreadId(mainAgentThread.id);
+                    className={`mobile-agent-toggle-button ${mobileAgentTab === "agent" ? "active" : ""}`}
+                    onClick={() => {
+                      setMobileAgentTab("agent");
+                      if (mainAgentThread?.id) {
+                        setSelectedThreadId(mainAgentThread.id);
                         }
                       }}
                     >
@@ -1928,11 +2008,11 @@ export default function App() {
               </>
             ) : null}
             {!isMobileAgentView ? (
-              <span className={`sidebar-type-badge ${selectedThread?.thread_type === "general" ? "deep" : "job"}`}>
-                {selectedThread?.thread_type === "general" ? "Agent" : "Helper"}
+              <span className={`sidebar-type-badge ${thread?.thread_type === "general" ? "deep" : "job"}`}>
+                {thread?.thread_type === "general" ? "Agent" : "Helper"}
               </span>
             ) : null}
-            {isDesktopRail && selectedThread?.thread_type !== "general" && mainAgentThread ? (
+            {isDesktopRail && thread?.thread_type !== "general" && mainAgentThread ? (
               <button
                 type="button"
                 className="desktop-agent-home"
@@ -1979,9 +2059,9 @@ export default function App() {
         </div>
         {showMobileHelperList ? renderMobileHelperList() : null}
         {showChatBody ? (
-          <div className={`chat-log ${isMobileAgentView ? "mobile-chat-log" : ""}`} ref={chatLogRef}>
-            {combinedThreadMessages.length ? (
-              combinedThreadMessages.map((message) =>
+          <div className={`chat-log ${isMobileAgentView ? "mobile-chat-log" : ""}`} ref={logRef}>
+            {messages.length ? (
+              messages.map((message) =>
                 message.role === "timeline_event" ? (
                   <div key={message.id} className="timeline-event">
                     <span>{message.content}</span>
@@ -1995,10 +2075,10 @@ export default function App() {
             ) : (
               <div className="chat-empty-state">
                 <p className="chat-empty-title">
-                  {selectedThread?.thread_type === "general" ? "Start with Agent." : "Start with this Helper."}
+                  {thread?.thread_type === "general" ? "Start with Agent." : "Start with this Helper."}
                 </p>
                 <p className="muted">
-                  {selectedThread?.thread_type === "general"
+                  {thread?.thread_type === "general"
                     ? "Ask for pipeline strategy, prioritization, follow-up planning, or a weekly search plan."
                     : "Ask about this specific role, resume fit, follow-ups, or interview prep."}
                 </p>
@@ -2011,7 +2091,7 @@ export default function App() {
             <p className="muted">Pick one from the list above to open that helper chat.</p>
           </div>
         )}
-        {pendingAction ? renderPendingActionPreview() : null}
+        {showPendingAction ? renderPendingActionPreview() : null}
         <div className="chat-quick-actions" onWheel={forwardScrollToChat}>
           <div className="chat-quick-actions-track">
             {marqueePrompts.map((prompt, index) => (
@@ -2027,15 +2107,15 @@ export default function App() {
           </div>
         </div>
         <form className="chat-compose chat-compose-bar" onSubmit={handleSendChat}>
-          <textarea
-            rows="3"
-            value={chatInput}
-            onChange={(event) => setChatInput(event.target.value)}
-            onWheel={forwardScrollToChat}
-            placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
-          />
-          <button className="action-button primary" type="submit" disabled={sendingChat || !selectedThreadId}>
-            {sendingChat ? "Sending..." : "Send"}
+            <textarea
+              rows="3"
+              value={inputValue}
+              onChange={(event) => setInputValue(event.target.value)}
+              onWheel={forwardScrollToChat}
+              placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
+            />
+          <button className="action-button primary" type="submit" disabled={sending || !threadId}>
+            {sending ? "Sending..." : "Send"}
           </button>
         </form>
       </div>
@@ -3076,16 +3156,20 @@ export default function App() {
 
         {page === "Helpers" ? (
           <section className="grid">
-            <div className="panel">
-              <div className="section-heading">
-                <h3>Helpers</h3>
-                <p>Select a helper from the left rail to work on role-specific strategy, outreach, and interview prep.</p>
+            {selectedThread?.thread_type && selectedThread.thread_type !== "general" ? (
+              renderAgentPanel()
+            ) : (
+              <div className="panel">
+                <div className="section-heading">
+                  <h3>Helpers</h3>
+                  <p>Select a helper from the left rail to work on role-specific strategy, outreach, and interview prep.</p>
+                </div>
+                <div className="meta-row">
+                  <span className="status-pill">{jobThreads.length} saved helpers</span>
+                  <span className="status-pill">Agent stays pinned on the right</span>
+                </div>
               </div>
-              <div className="meta-row">
-                <span className="status-pill">{jobThreads.length} saved helpers</span>
-                <span className="status-pill">Agent stays pinned on the right</span>
-              </div>
-            </div>
+            )}
           </section>
         ) : null}
 
@@ -3335,7 +3419,19 @@ export default function App() {
           >
             {isDesktopAgentCollapsed ? "‹" : "›"}
           </button>
-          {!isDesktopAgentCollapsed ? renderAgentPanel(true) : null}
+          {!isDesktopAgentCollapsed
+            ? renderAgentPanel({
+                isDesktopRail: true,
+                thread: agentThread,
+                threadId: mainAgentThread?.id,
+                messages: agentCombinedThreadMessages,
+                inputValue: agentChatInput,
+                setInputValue: setAgentChatInput,
+                onSubmit: handleSendAgentChat,
+                sending: sendingAgentChat,
+                logRef: agentChatLogRef,
+              })
+            : null}
         </aside>
       ) : null}
 
