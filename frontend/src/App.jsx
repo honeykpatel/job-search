@@ -789,11 +789,13 @@ export default function App() {
   }, [selectedThreadId, session?.access_token]);
 
   useEffect(() => {
-    if (!showDesktopAgentRail || !mainAgentThread?.id) {
+    const shouldShowDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+    const nextMainAgentThread = threads.find((thread) => thread.thread_type === "general") || null;
+    if (!shouldShowDesktopAgentRail || !nextMainAgentThread?.id) {
       return;
     }
-    void loadAgentThread(mainAgentThread.id);
-  }, [mainAgentThread?.id, session?.access_token, showDesktopAgentRail]);
+    void loadAgentThread(nextMainAgentThread.id);
+  }, [threads, session?.access_token, isDesktopViewport, isAdminRoute]);
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
@@ -806,11 +808,12 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [page, selectedThreadId, selectedThread?.messages, showDesktopAgentRail]);
+  }, [page, selectedThreadId, selectedThread?.messages]);
 
   useEffect(() => {
     const chatLog = agentChatLogRef.current;
-    if (!chatLog || !showDesktopAgentRail) {
+    const shouldShowDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+    if (!chatLog || !shouldShowDesktopAgentRail) {
       return;
     }
 
@@ -819,7 +822,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [agentThread?.messages, showDesktopAgentRail]);
+  }, [agentThread?.messages, isDesktopViewport, session?.access_token, isAdminRoute]);
 
   async function bootstrap(accessToken) {
     try {
