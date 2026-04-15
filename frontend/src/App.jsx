@@ -2204,6 +2204,10 @@ export default function App() {
     const showAgentHighlight =
       thread?.thread_type === "general" && (!isMobileAgentView || mobileAgentTab === "agent");
     const showThinkingState = sending && showChatBody;
+    const threadJob = jobsById[thread?.job_id];
+    const threadResume = resumesById[thread?.resume_id];
+    const helperHeaderTitle = thread?.title || `${threadJob?.title || "Untitled"} @ ${threadJob?.company || "Unknown"}`;
+    const helperHeaderResume = threadResume?.filename || "No resume";
     const quickPrompts =
       thread?.thread_type === "general"
         ? [
@@ -2279,9 +2283,17 @@ export default function App() {
               </>
             ) : null}
             {!isMobileAgentView ? (
-              <span className={`sidebar-type-badge ${thread?.thread_type === "general" ? "deep" : "job"}`}>
-                {thread?.thread_type === "general" ? "Agent" : "Helper"}
-              </span>
+              <div className="chat-thread-meta">
+                <span className={`sidebar-type-badge ${thread?.thread_type === "general" ? "deep" : "job"}`}>
+                  {thread?.thread_type === "general" ? "Agent" : "Helper"}
+                </span>
+                {thread?.thread_type !== "general" ? (
+                  <div className="chat-thread-summary">
+                    <strong>{helperHeaderTitle}</strong>
+                    <span>{helperHeaderResume}</span>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             {isDesktopRail && thread?.thread_type !== "general" && mainAgentThread ? (
               <button
