@@ -2236,13 +2236,14 @@ export default function App() {
       }
       const nextTop = event.currentTarget.scrollTop;
       const { top: previousTop } = helperInsightsScrollRef.current;
-      const hasEnoughChat = event.currentTarget.scrollHeight - event.currentTarget.clientHeight > 220;
+      const overflowHeight = event.currentTarget.scrollHeight - event.currentTarget.clientHeight;
+      const hasEnoughChat = overflowHeight > 120;
 
-      if (!hasEnoughChat || nextTop < 64) {
+      if (!hasEnoughChat || nextTop < 24) {
         setShowHelperInsightsBar(true);
-      } else if (nextTop > previousTop + 8) {
+      } else if (nextTop > previousTop + 6) {
         setShowHelperInsightsBar(false);
-      } else if (nextTop < previousTop - 8) {
+      } else if (nextTop < previousTop - 6) {
         setShowHelperInsightsBar(true);
       }
 
