@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -73,6 +74,17 @@ GENERAL_AGENT_PROMPT = (
     "If profile data is missing, say so briefly and ask the user to save it in the Agent profile panel. "
     "When discussing priorities, reason across the whole pipeline instead of focusing on only one job unless the user asks for that. "
     "Keep answers concise and structured."
+)
+
+HELPER_INSIGHTS_PROMPT = (
+    "You are generating structured helper insight cards for one specific helper thread. "
+    "You must fetch the current job and current resume before responding. "
+    "Use the available tools first, then return strict JSON only with this exact shape: "
+    '{"cover_letter_draft":"string","skills_needed":["string"],"skills_to_upgrade":["string"],"match_percent":0}. '
+    "Rules: cover_letter_draft must be polished and at most 100 words; skills_needed must list the highest-signal skills from the job; "
+    "skills_to_upgrade must list the important skills missing or weak in the resume for this job; "
+    "match_percent must be an integer from 0 to 100 based on job-resume fit. "
+    "Do not wrap the JSON in markdown. Do not add commentary outside JSON."
 )
 
 load_dotenv()
@@ -214,3 +226,98 @@ def build_graph(
 
     graph.add_conditional_edges("agent", _route, {"tools": "tools", END: END})
     return graph.compile()
+
+
+def _parse_helper_insights_json(content: str) -> dict:
+    text = (content or "").strip()
+    if text.startswith("```"):
+        parts = text.split("```")
+        text = next((part for part in parts if "{" in part and "}" in part), text)
+        text = text.replace("json", "", 1).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError("Helper insights response did not contain JSON.")
+    parsed = json.loads(text[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("Helper insights response was not a JSON object.")
+    return parsed
+
+
+def generate_helper_insights(
+    thread_context: str | None = None,
+    history_messages: list | None = None,
+    thread_job_id: str | None = None,
+    thread_resume_id: int | None = None,
+    thread_user_id: str | None = None,
+) -> dict:
+    config_error = get_memory_setup_error()
+    if config_error:
+        raise RuntimeError(config_error)
+
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    @tool
+    def get_current_job() -> dict | None:
+        """Fetch the saved job attached to this Helper thread."""
+        if not thread_job_id:
+            return None
+        return get_job(thread_job_id, user_id=thread_user_id)
+
+    @tool
+    def get_current_resume() -> dict | None:
+        """Fetch the saved resume attached to this Helper thread."""
+        if thread_resume_id is None:
+            return None
+        return get_resume(int(thread_resume_id), user_id=thread_user_id)
+
+    @tool
+    def get_current_application() -> dict | None:
+        """Fetch the application record for the current Helper thread."""
+        if not thread_job_id:
+            return None
+        return get_application_by_job(thread_job_id, user_id=thread_user_id)
+
+    tools = [get_current_job, get_current_resume, get_current_application]
+    tool_map = {tool.name: tool for tool in tools}
+    llm_with_tools = llm.bind_tools(tools)
+
+    messages: list = [SystemMessage(content=HELPER_INSIGHTS_PROMPT)]
+    if thread_context:
+        messages.append(SystemMessage(content=thread_context))
+    if history_messages:
+        messages.extend(history_messages)
+    messages.append(
+        HumanMessage(
+            content=(
+                "Generate the helper insight cards for this helper thread. "
+                "Fetch the current job and current resume first, then return the strict JSON."
+            )
+        )
+    )
+
+    for _ in range(6):
+        response = llm_with_tools.invoke(messages)
+        messages.append(response)
+        if not getattr(response, "tool_calls", None):
+            parsed = _parse_helper_insights_json(getattr(response, "content", ""))
+            return {
+                "cover_letter_draft": str(parsed.get("cover_letter_draft") or "").strip(),
+                "skills_needed": [str(item).strip() for item in (parsed.get("skills_needed") or []) if str(item).strip()],
+                "skills_to_upgrade": [
+                    str(item).strip() for item in (parsed.get("skills_to_upgrade") or []) if str(item).strip()
+                ],
+                "match_percent": max(0, min(100, int(parsed.get("match_percent") or 0))),
+            }
+
+        for tool_call in response.tool_calls:
+            tool_impl = tool_map[tool_call["name"]]
+            result = tool_impl.invoke(tool_call.get("args", {}))
+            messages.append(
+                ToolMessage(
+                    content=json.dumps(result, ensure_ascii=False),
+                    tool_call_id=tool_call["id"],
+                )
+            )
+
+    raise RuntimeError("Helper insights generation did not complete.")

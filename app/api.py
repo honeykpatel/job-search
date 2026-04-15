@@ -26,7 +26,7 @@ from app.conversation import (
 )
 from app.pipeline import build_pipeline_summary
 from matching.tfidf_ranker import rank_jobs
-from memory.graph import build_graph, get_memory_setup_error
+from memory.graph import build_graph, generate_helper_insights, get_memory_setup_error
 from memory.tools import reset_active_user_id, set_active_user_id
 from parsing.resume_text import extract_text
 from storage.db import (
@@ -911,7 +911,27 @@ def ensure_helper_insights(thread_id: int, current_user_id: str = Depends(requir
     if existing:
         return {"insights": existing, "messages": messages}
 
-    generated = _generate_helper_insights(thread, messages, current_user_id)
+    thread_job = get_job(thread["job_id"], user_id=current_user_id) if thread.get("job_id") else None
+    thread_resume = get_resume(thread["resume_id"], user_id=current_user_id) if thread.get("resume_id") else None
+    profile = get_user_profile(user_id=current_user_id)
+    thread_context = build_thread_context(
+        thread_job,
+        thread_resume,
+        profile=profile,
+        thread_type="job",
+    )
+    generated = {
+        "kind": "helper_insights",
+        "version": 2,
+        "thread_id": thread["id"],
+        **generate_helper_insights(
+            thread_context=thread_context,
+            history_messages=build_langchain_messages(messages),
+            thread_job_id=thread.get("job_id"),
+            thread_resume_id=thread.get("resume_id"),
+            thread_user_id=current_user_id,
+        ),
+    }
     add_chat_message(thread_id, "tool", json.dumps(generated), user_id=current_user_id)
     next_messages = get_chat_messages(thread_id, user_id=current_user_id)
     return {"insights": generated, "messages": next_messages}
