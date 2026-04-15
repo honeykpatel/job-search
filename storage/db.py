@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ ADMIN_TABLE_RULES: dict[str, dict[str, Any]] = {
         "deletable": True,
     },
     "chat_threads": {
-        "editable": {"title", "thread_type"},
+        "editable": {"title", "thread_type", "messages_json"},
         "creatable": set(),
         "deletable": True,
     },
@@ -111,6 +112,20 @@ def get_conn():
 
 def _utcnow() -> str:
     return datetime.utcnow().isoformat()
+
+
+def _deserialize_messages(raw: Any) -> list[dict[str, Any]]:
+    if raw in (None, ""):
+        return []
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _serialize_messages(messages: list[dict[str, Any]]) -> str:
+    return json.dumps(messages, ensure_ascii=False)
 
 
 def _column_exists(table: str, column: str) -> bool:
@@ -390,6 +405,7 @@ def init_db():
                         job_id TEXT,
                         resume_id INTEGER,
                         application_id INTEGER,
+                        messages_json TEXT NOT NULL DEFAULT '[]',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
@@ -518,6 +534,7 @@ def init_db():
                         job_id TEXT,
                         resume_id INTEGER,
                         application_id INTEGER,
+                        messages_json TEXT NOT NULL DEFAULT '[]',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
@@ -566,6 +583,7 @@ def init_db():
     _ensure_column("job_postings", "search_query", "TEXT")
     _ensure_column("job_postings", "updated_at", "TEXT")
     _ensure_column("chat_threads", "thread_type", "TEXT NOT NULL DEFAULT 'job'")
+    _ensure_column("chat_threads", "messages_json", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column("user_profiles", "full_name", "TEXT")
     _ensure_column("user_profiles", "phone", "TEXT")
 
@@ -586,6 +604,15 @@ def init_db():
                 UPDATE chat_threads
                 SET thread_type = 'job'
                 WHERE thread_type IS NULL OR thread_type = ''
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE chat_threads
+                SET messages_json = '[]'
+                WHERE messages_json IS NULL OR messages_json = ''
                 """
             )
         )
@@ -639,6 +666,41 @@ def init_db():
             ),
             {"user_id": DEFAULT_LOCAL_USER_ID, "created_at": now, "updated_at": now},
         )
+
+        threads_to_migrate = conn.execute(
+            text("SELECT id, messages_json FROM chat_threads")
+        ).fetchall()
+        for thread_row in threads_to_migrate:
+            thread_id = int(thread_row[0])
+            current_messages = _deserialize_messages(thread_row[1])
+            if current_messages:
+                continue
+            legacy_rows = conn.execute(
+                text(
+                    """
+                    SELECT id, role, content, created_at
+                    FROM chat_messages
+                    WHERE thread_id = :thread_id
+                    ORDER BY id ASC
+                    """
+                ),
+                {"thread_id": thread_id},
+            ).fetchall()
+            if not legacy_rows:
+                continue
+            migrated_messages = [
+                {
+                    "id": row[0],
+                    "role": row[1],
+                    "content": row[2],
+                    "created_at": row[3],
+                }
+                for row in legacy_rows
+            ]
+            conn.execute(
+                text("UPDATE chat_threads SET messages_json = :messages_json WHERE id = :thread_id"),
+                {"messages_json": _serialize_messages(migrated_messages), "thread_id": thread_id},
+            )
 
 
 def save_session(job_title: str, location: str, work_style: str, k: int, user_id: str | None = None) -> int:
@@ -1322,24 +1384,26 @@ def get_chat_messages(thread_id: int, user_id: str | None = None):
         result = conn.execute(
             text(
                 """
-                SELECT cm.id, cm.role, cm.content, cm.created_at
-                FROM chat_messages cm
-                JOIN chat_threads ct ON ct.id = cm.thread_id
-                WHERE cm.thread_id = :thread_id AND ct.user_id = :user_id
-                ORDER BY cm.id ASC
+                SELECT messages_json
+                FROM chat_threads
+                WHERE id = :thread_id AND user_id = :user_id
+                LIMIT 1
                 """
             ),
             {"thread_id": int(thread_id), "user_id": resolved_user_id},
         )
-        rows = result.fetchall()
+        row = result.fetchone()
+        if not row:
+            return []
+        messages = _deserialize_messages(row[0])
         return [
             {
-                "id": row[0],
-                "role": row[1],
-                "content": row[2],
-                "created_at": row[3],
+                "id": message.get("id"),
+                "role": message.get("role"),
+                "content": message.get("content"),
+                "created_at": message.get("created_at"),
             }
-            for row in rows
+            for message in messages
         ]
 
 
@@ -1347,32 +1411,38 @@ def add_chat_message(thread_id: int, role: str, content: str, user_id: str | Non
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
     with ENGINE.begin() as conn:
-        thread_exists = conn.execute(
-            text("SELECT id FROM chat_threads WHERE id = :thread_id AND user_id = :user_id"),
+        thread_row = conn.execute(
+            text("SELECT id, messages_json FROM chat_threads WHERE id = :thread_id AND user_id = :user_id"),
             {"thread_id": int(thread_id), "user_id": resolved_user_id},
         ).fetchone()
-        if thread_exists is None:
+        if thread_row is None:
             raise ValueError("Unknown thread_id")
-        result = conn.execute(
-            text(
-                """
-                INSERT INTO chat_messages (thread_id, role, content, created_at)
-                VALUES (:thread_id, :role, :content, :created_at)
-                RETURNING id
-                """
-            ),
+        messages = _deserialize_messages(thread_row[1])
+        next_id = max((int(message.get("id", 0)) for message in messages), default=0) + 1
+        messages.append(
             {
-                "thread_id": int(thread_id),
+                "id": next_id,
                 "role": role,
                 "content": content,
                 "created_at": now,
-            },
+            }
         )
         conn.execute(
-            text("UPDATE chat_threads SET updated_at = :updated_at WHERE id = :thread_id AND user_id = :user_id"),
-            {"updated_at": now, "thread_id": int(thread_id), "user_id": resolved_user_id},
+            text(
+                """
+                UPDATE chat_threads
+                SET messages_json = :messages_json, updated_at = :updated_at
+                WHERE id = :thread_id AND user_id = :user_id
+                """
+            ),
+            {
+                "messages_json": _serialize_messages(messages),
+                "updated_at": now,
+                "thread_id": int(thread_id),
+                "user_id": resolved_user_id,
+            },
         )
-        return int(result.scalar_one())
+        return next_id
 
 
 def clear_chat_thread(thread_id: int, user_id: str | None = None):
@@ -1381,16 +1451,16 @@ def clear_chat_thread(thread_id: int, user_id: str | None = None):
         conn.execute(
             text(
                 """
-                DELETE FROM chat_messages
-                WHERE thread_id = :thread_id
-                  AND thread_id IN (SELECT id FROM chat_threads WHERE id = :thread_id AND user_id = :user_id)
+                UPDATE chat_threads
+                SET messages_json = '[]', updated_at = :updated_at
+                WHERE id = :thread_id AND user_id = :user_id
                 """
             ),
-            {"thread_id": int(thread_id), "user_id": resolved_user_id},
+            {"thread_id": int(thread_id), "user_id": resolved_user_id, "updated_at": _utcnow()},
         )
         conn.execute(
-            text("UPDATE chat_threads SET updated_at = :updated_at WHERE id = :thread_id AND user_id = :user_id"),
-            {"updated_at": _utcnow(), "thread_id": int(thread_id), "user_id": resolved_user_id},
+            text("DELETE FROM chat_messages WHERE thread_id = :thread_id"),
+            {"thread_id": int(thread_id)},
         )
 
 
