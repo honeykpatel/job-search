@@ -535,7 +535,20 @@ export default function App() {
   const [sendingAgentChat, setSendingAgentChat] = useState(false);
   const chatLogRef = useRef(null);
   const agentChatLogRef = useRef(null);
+  const chatInputRef = useRef(null);
+  const agentChatInputRef = useRef(null);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+
+  function resizeComposerTextarea(textarea) {
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "0px";
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 120 ? "auto" : "hidden";
+  }
 
   function navigateTo(nextPath) {
     if (window.location.pathname !== nextPath) {
@@ -811,6 +824,10 @@ export default function App() {
   }, [page, mobileAgentTab, selectedThreadId, selectedThread?.messages, sendingChat]);
 
   useEffect(() => {
+    resizeComposerTextarea(chatInputRef.current);
+  }, [chatInput]);
+
+  useEffect(() => {
     const chatLog = agentChatLogRef.current;
     const shouldShowDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
     if (!chatLog || !shouldShowDesktopAgentRail) {
@@ -823,6 +840,10 @@ export default function App() {
 
     return () => window.cancelAnimationFrame(rafId);
   }, [agentThread?.messages, sendingAgentChat, isDesktopViewport, session?.access_token, isAdminRoute]);
+
+  useEffect(() => {
+    resizeComposerTextarea(agentChatInputRef.current);
+  }, [agentChatInput]);
 
   async function bootstrap(accessToken) {
     try {
@@ -1928,6 +1949,7 @@ export default function App() {
     onSubmit = handleSendChat,
     sending = sendingChat,
     logRef = chatLogRef,
+    inputRef = chatInputRef,
   } = {}) {
     const isMobileAgentView = !isDesktopRail && !isDesktopViewport;
     const showingMobileHelperTab = isMobileAgentView && mobileAgentTab === "helper";
@@ -2122,9 +2144,11 @@ export default function App() {
         </div>
         <form className="chat-compose chat-compose-bar" onSubmit={onSubmit}>
           <textarea
-            rows="3"
+            ref={inputRef}
+            rows="1"
             value={inputValue}
             onChange={(event) => setInputValue(event.target.value)}
+            onInput={(event) => resizeComposerTextarea(event.currentTarget)}
             onWheel={forwardScrollToChat}
             placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
           />
@@ -3449,6 +3473,7 @@ export default function App() {
                 onSubmit: handleSendAgentChat,
                 sending: sendingAgentChat,
                 logRef: agentChatLogRef,
+                inputRef: agentChatInputRef,
               })
             : null}
         </aside>

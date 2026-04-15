@@ -1735,15 +1735,18 @@ button {
   align-items: end;
   width: min(100%, 920px);
   margin: 0 auto 2px;
-  padding: 10px 12px;
+  min-height: 56px;
+  padding: 8px 10px 8px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  border-radius: 18px;
   background: rgba(16, 16, 17, 0.96);
   box-shadow: var(--shadow-md);
 }
 
 .chat-compose-bar textarea {
   appearance: none;
+  display: block;
+  width: 100%;
   min-height: 24px;
   height: 24px;
   max-height: 120px;
@@ -1751,10 +1754,13 @@ button {
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: 6px 4px;
+  padding: 0;
   outline: none;
   box-shadow: none;
+  color: var(--text);
+  font-size: 0.95rem;
   line-height: 1.45;
+  overflow-y: hidden;
 }
 
 .chat-compose-bar textarea:focus,
@@ -1769,6 +1775,7 @@ button {
   display: inline-grid;
   place-items: center;
   width: 40px;
+  height: 40px;
   min-height: 40px;
   padding: 0;
   border-radius: 12px;
@@ -2202,7 +2209,9 @@ button {
   }
 
   .chat-compose-bar {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 54px;
+    padding: 8px 8px 8px 12px;
   }
 
   .chat-message,
