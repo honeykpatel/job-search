@@ -1713,8 +1713,39 @@ button {
   width: 40px;
   height: 40px;
   border-radius: 14px;
-  background: linear-gradient(180deg, #f5f5f6, #d6d6da);
+  border: 1px solid rgba(125, 225, 167, 0.22);
+  background:
+    url("/JobPilotLogo.png") center / 74% no-repeat,
+    linear-gradient(180deg, rgba(244, 250, 245, 0.98), rgba(214, 235, 219, 0.92));
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.agent-chat-panel-agent .chat-message.assistant .markdown-message {
+  color: #8de8ae;
+}
+
+.agent-chat-panel-agent .chat-message.assistant .markdown-message h1,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message h2,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message h3,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message p,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message li,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message strong,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message em,
+.agent-chat-panel-agent .chat-message.assistant .markdown-message blockquote {
+  color: inherit;
+}
+
+.agent-chat-panel-agent .chat-message.assistant .markdown-message a {
+  color: #b8ffd0;
+}
+
+.agent-chat-panel-agent .chat-message.assistant .markdown-message code {
+  color: #d7ffe4;
+  background: rgba(125, 225, 167, 0.1);
+}
+
+.agent-chat-panel-agent .chat-message.assistant .markdown-message pre {
+  border-color: rgba(125, 225, 167, 0.18);
 }
 
 .chat-message.tool {
