@@ -98,6 +98,7 @@ textarea {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .shell {
@@ -496,6 +497,13 @@ button {
     box-shadow 180ms ease;
 }
 
+.ui-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex: 0 0 auto;
+}
+
 .nav-button:hover,
 .mini-button:hover,
 .action-button:hover,
@@ -624,7 +632,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  width: 38px;
   min-height: 100%;
   background: var(--danger-soft);
   color: rgba(255, 255, 255, 0.86);
@@ -647,12 +655,12 @@ button {
 }
 
 .icon-button {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .icon-button:hover {
@@ -1198,13 +1206,15 @@ button {
   top: 18px;
   left: 0;
   z-index: 4;
-  width: 28px;
+  width: 32px;
   height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-left: 0;
   border-radius: 0 14px 14px 0;
   background: rgba(22, 22, 24, 0.98);
   color: var(--text-strong);
+  display: grid;
+  place-items: center;
 }
 
 .desktop-agent-panel {
@@ -1362,7 +1372,7 @@ button {
 }
 
 .mobile-agent-toggle-button {
-  min-height: 34px;
+  min-height: 40px;
   min-width: 92px;
   padding: 0 14px;
   border: 0;
@@ -1379,17 +1389,13 @@ button {
 }
 
 .mobile-agent-back {
-  width: 34px;
-  height: 34px;
-  font-size: 1.3rem;
-  line-height: 1;
+  width: 40px;
+  height: 40px;
 }
 
 .mobile-agent-menu {
-  width: 34px;
-  height: 34px;
-  font-size: 1rem;
-  line-height: 1;
+  width: 40px;
+  height: 40px;
 }
 
 .desktop-agent-home {
@@ -1789,10 +1795,9 @@ button {
   height: 18px;
 }
 
-.chat-send-icon svg {
+.chat-send-icon .ui-icon {
   width: 18px;
   height: 18px;
-  fill: currentColor;
 }
 
 .chat-message.assistant.thinking {
@@ -2089,6 +2094,8 @@ button {
     transform: translateX(-100%);
     transition: transform 180ms ease;
     box-shadow: 18px 0 40px rgba(0, 0, 0, 0.32);
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
 
   .sidebar.open {
@@ -2130,7 +2137,7 @@ button {
     top: 0;
     z-index: 5;
     width: 100%;
-    padding-top: 4px;
+    padding-top: max(4px, env(safe-area-inset-top));
     padding-bottom: 10px;
     background: linear-gradient(180deg, rgba(13, 13, 14, 0.99), rgba(13, 13, 14, 0.92) 78%, transparent);
   }
@@ -2175,20 +2182,26 @@ button {
 
 @media (max-width: 720px) {
   .content {
-    padding: 14px 16px 24px;
+    padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+      calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
 
   .mobile-topbar {
     display: flex;
     align-items: center;
     justify-content: flex-start;
+    position: sticky;
+    top: 0;
+    z-index: 12;
     width: 100%;
     margin-bottom: 6px;
+    padding: 2px 0 8px;
+    background: linear-gradient(180deg, rgba(12, 12, 13, 0.98), rgba(12, 12, 13, 0.82) 78%, transparent);
   }
 
   .mobile-sidebar-toggle {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   .mobile-sidebar-backdrop {
@@ -2214,6 +2227,17 @@ button {
     padding: 8px 8px 8px 12px;
   }
 
+  .icon-button,
+  .mobile-agent-menu,
+  .mobile-agent-back {
+    width: 44px;
+    height: 44px;
+  }
+
+  .mobile-agent-toggle-button {
+    min-height: 44px;
+  }
+
   .chat-message,
   .chat-message.user,
   .chat-message.tool {
@@ -2234,5 +2258,27 @@ button {
 
   .modal-backdrop {
     padding: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .chat-quick-actions-track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .thinking-bubble span {
+    animation: none !important;
+    opacity: 0.78;
+    transform: none;
   }
 }

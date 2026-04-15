@@ -448,6 +448,85 @@ function formatAdminCellValue(value) {
   return String(value);
 }
 
+function AppIcon({ name }) {
+  const icons = {
+    menu: (
+      <path
+        d="M4 7h16M4 12h16M4 17h16"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    ),
+    close: (
+      <path
+        d="m6 6 12 12M18 6 6 18"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    ),
+    chevronLeft: (
+      <path
+        d="m14.5 5-7 7 7 7"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    ),
+    chevronRight: (
+      <path
+        d="m9.5 5 7 7-7 7"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    ),
+    chevronDown: (
+      <path
+        d="m6 9 6 6 6-6"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    ),
+    chevronUp: (
+      <path
+        d="m6 15 6-6 6 6"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    ),
+    more: (
+      <>
+        <circle cx="6.5" cy="12" r="1.4" fill="currentColor" />
+        <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+        <circle cx="17.5" cy="12" r="1.4" fill="currentColor" />
+      </>
+    ),
+    send: <path d="M3 20 21 12 3 4l3.6 6.2L14 12l-7.4 1.8Z" fill="currentColor" />,
+  };
+
+  return (
+    <svg className="ui-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      {icons[name]}
+    </svg>
+  );
+}
+
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname || "/");
   const [authMode, setAuthMode] = useState("sign-in");
@@ -1868,7 +1947,7 @@ export default function App() {
                       }}
                       aria-label={`Open helper actions for ${helperTitle}`}
                     >
-                      ...
+                      <AppIcon name="more" />
                     </button>
                     {openSidebarItemMenu === menuId ? (
                       <div className="sidebar-item-menu">
@@ -1994,7 +2073,7 @@ export default function App() {
                     onClick={() => setIsMobileSidebarOpen((current) => !current)}
                     aria-label={isMobileSidebarOpen ? "Close sidebar" : "Open sidebar"}
                   >
-                    {isMobileSidebarOpen ? "x" : "="}
+                    {isMobileSidebarOpen ? <AppIcon name="close" /> : <AppIcon name="menu" />}
                   </button>
                 </div>
                 <div className="mobile-agent-toggle-wrap">
@@ -2028,7 +2107,7 @@ export default function App() {
                       onClick={() => setSelectedThreadId(null)}
                       aria-label="Back to helper list"
                     >
-                      ‹
+                      <AppIcon name="chevronLeft" />
                     </button>
                   ) : null}
                 </div>
@@ -2057,7 +2136,7 @@ export default function App() {
                 onClick={() => setShowChatMenu((current) => !current)}
                 aria-label="Open chat options"
               >
-                ...
+                <AppIcon name="more" />
               </button>
               {showChatMenu ? (
                 <div className="chat-menu">
@@ -2154,9 +2233,7 @@ export default function App() {
           />
           <button className="action-button primary" type="submit" disabled={sending || !threadId}>
             <span className="chat-send-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path d="M3 20 21 12 3 4l3.6 6.2L14 12l-7.4 1.8Z" />
-              </svg>
+              <AppIcon name="send" />
             </span>
             <span className="sr-only">{sending ? "Sending message" : "Send message"}</span>
           </button>
@@ -2256,7 +2333,7 @@ export default function App() {
   };
 
   if (authLoading) {
-    return <main className="auth-shell"><section className="auth-card"><p>Loading authentication…</p></section></main>;
+    return <main className="auth-shell"><section className="auth-card"><p>Loading authentication...</p></section></main>;
   }
 
   if (isAdminRoute && !adminSession?.token) {
@@ -2472,7 +2549,7 @@ export default function App() {
                             }}
                             aria-label={`Open options for search session ${session.id}`}
                           >
-                            ...
+                            <AppIcon name="more" />
                           </button>
                           {openSidebarItemMenu === menuId ? (
                             <div className="sidebar-item-menu">
@@ -2548,7 +2625,7 @@ export default function App() {
                           }}
                           aria-label={`Open options for resume ${resume.id}`}
                         >
-                          ...
+                          <AppIcon name="more" />
                         </button>
                         {openSidebarItemMenu === `resume-${resume.id}` ? (
                           <div className="sidebar-item-menu">
@@ -2614,7 +2691,7 @@ export default function App() {
                       }}
                       aria-label={`Open options for search session ${session.id}`}
                     >
-                      ...
+                      <AppIcon name="more" />
                     </button>
                     {openSidebarItemMenu === menuId ? (
                       <div className="sidebar-item-menu">
@@ -2663,7 +2740,9 @@ export default function App() {
                   {adminSession?.token && !session?.access_token ? "Admin workspace" : "Private workspace"}
                 </span>
               </div>
-              <span className="sidebar-account-caret" aria-hidden="true">{showAccountMenu ? "−" : "+"}</span>
+              <span className="sidebar-account-caret" aria-hidden="true">
+                <AppIcon name={showAccountMenu ? "chevronUp" : "chevronDown"} />
+              </span>
             </button>
             {showAccountMenu ? (
               <div className="sidebar-account-menu">
@@ -2712,7 +2791,7 @@ export default function App() {
               onClick={() => setIsMobileSidebarOpen((current) => !current)}
               aria-label={isMobileSidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
-              {isMobileSidebarOpen ? "x" : "="}
+              {isMobileSidebarOpen ? <AppIcon name="close" /> : <AppIcon name="menu" />}
             </button>
           </div>
         ) : null}
@@ -3460,7 +3539,7 @@ export default function App() {
             aria-label={isDesktopAgentCollapsed ? "Expand agent rail" : "Collapse agent rail"}
             title={isDesktopAgentCollapsed ? "Expand Agent" : "Collapse Agent"}
           >
-            {isDesktopAgentCollapsed ? "‹" : "›"}
+            {isDesktopAgentCollapsed ? <AppIcon name="chevronLeft" /> : <AppIcon name="chevronRight" />}
           </button>
           {!isDesktopAgentCollapsed
             ? renderAgentPanel({
@@ -3493,7 +3572,7 @@ export default function App() {
                 onClick={() => setShowNewJobAgentModal(false)}
                 aria-label="Close new job agent dialog"
               >
-                x
+                <AppIcon name="close" />
               </button>
             </div>
             <form className="modal-form" onSubmit={handleCreateJobThread}>
@@ -3553,7 +3632,7 @@ export default function App() {
                 <p className="muted">Run a saved search and attach the results to a new session.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setShowSearchModal(false)}>
-                x
+                <AppIcon name="close" />
               </button>
             </div>
             <form className="modal-form" onSubmit={handleSearch}>
@@ -3621,7 +3700,7 @@ export default function App() {
                 <p className="muted">Upload a PDF or DOCX resume to save it for matching and helpers.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setShowResumeUploadModal(false)}>
-                x
+                <AppIcon name="close" />
               </button>
             </div>
             <div className="modal-form">
@@ -3658,3 +3737,4 @@ export default function App() {
     </div>
   );
 }
+
