@@ -808,7 +808,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [page, mobileAgentTab, selectedThreadId, selectedThread?.messages]);
+  }, [page, mobileAgentTab, selectedThreadId, selectedThread?.messages, sendingChat]);
 
   useEffect(() => {
     const chatLog = agentChatLogRef.current;
@@ -822,7 +822,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [agentThread?.messages, isDesktopViewport, session?.access_token, isAdminRoute]);
+  }, [agentThread?.messages, sendingAgentChat, isDesktopViewport, session?.access_token, isAdminRoute]);
 
   async function bootstrap(accessToken) {
     try {
@@ -1937,6 +1937,7 @@ export default function App() {
     const showChatBody = !showingMobileHelperTab || showingSelectedMobileHelper;
     const showAgentHighlight =
       thread?.thread_type === "general" && (!isMobileAgentView || mobileAgentTab === "agent");
+    const showThinkingState = sending && showChatBody;
     const quickPrompts =
       thread?.thread_type === "general"
         ? [
@@ -2088,6 +2089,15 @@ export default function App() {
                 </p>
               </div>
             )}
+            {showThinkingState ? (
+              <div className="chat-message assistant thinking" aria-live="polite" aria-label="Agent is thinking">
+                <div className="thinking-bubble">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="chat-empty-state mobile-helper-prompt">
@@ -2119,7 +2129,12 @@ export default function App() {
             placeholder="Ask about your search strategy, a saved job, a follow-up, or an application update."
           />
           <button className="action-button primary" type="submit" disabled={sending || !threadId}>
-            {sending ? "Sending..." : "Send"}
+            <span className="chat-send-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M3 20 21 12 3 4l3.6 6.2L14 12l-7.4 1.8Z" />
+              </svg>
+            </span>
+            <span className="sr-only">{sending ? "Sending message" : "Send message"}</span>
           </button>
         </form>
       </div>
