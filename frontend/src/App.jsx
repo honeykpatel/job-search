@@ -1935,6 +1935,8 @@ export default function App() {
       showingMobileHelperTab && thread?.thread_type && thread?.thread_type !== "general";
     const showMobileHelperList = showingMobileHelperTab && !showingSelectedMobileHelper;
     const showChatBody = !showingMobileHelperTab || showingSelectedMobileHelper;
+    const showAgentHighlight =
+      thread?.thread_type === "general" && (!isMobileAgentView || mobileAgentTab === "agent");
     const quickPrompts =
       thread?.thread_type === "general"
         ? [
@@ -1954,7 +1956,7 @@ export default function App() {
 
     return (
       <div
-        className={`panel chat-panel agent-chat-panel ${thread?.thread_type === "general" ? "agent-chat-panel-agent" : ""} ${
+        className={`panel chat-panel agent-chat-panel ${showAgentHighlight ? "agent-chat-panel-agent" : ""} ${
           isDesktopRail ? "desktop-agent-panel" : ""
         } ${isMobileAgentView ? "mobile-agent-panel" : ""}`}
       >
