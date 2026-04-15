@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import MetaData, String, bindparam, cast, create_engine, event, func, inspect, or_, select, text
 from sqlalchemy.engine import Engine, Row
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
 
 from utils.company_inference import ensure_job_company
@@ -169,6 +170,29 @@ def _resolve_user_id(user_id: str | None = None) -> str:
 
 def _serialize_row_mapping(mapping: Any) -> dict[str, Any]:
     return {key: value for key, value in dict(mapping).items()}
+
+
+def _run_with_disconnect_retry(work, *, retries: int = 1):
+    last_error: DBAPIError | None = None
+    for attempt in range(retries + 1):
+        try:
+            with ENGINE.begin() as conn:
+                return work(conn)
+        except DBAPIError as exc:
+            last_error = exc
+            if attempt >= retries:
+                raise
+            disconnect_signals = (
+                exc.connection_invalidated
+                or "connection to database closed" in str(exc).lower()
+                or "edbhandlerexited" in str(exc).lower()
+            )
+            if not disconnect_signals:
+                raise
+            ENGINE.dispose()
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Database operation failed before execution.")
 
 
 def _coerce_table_value(column, value: Any) -> Any:
@@ -729,7 +753,7 @@ def save_session(job_title: str, location: str, work_style: str, k: int, user_id
 
 def list_sessions(limit: int = 20, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    def _work(conn):
         result = conn.execute(
             text(
                 """
@@ -752,6 +776,7 @@ def list_sessions(limit: int = 20, user_id: str | None = None):
             {"limit": int(limit), "user_id": resolved_user_id},
         )
         return _fetchall_tuples(result)
+    return _run_with_disconnect_retry(_work)
 
 
 def delete_session(session_id: int, user_id: str | None = None):
