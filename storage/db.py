@@ -134,12 +134,23 @@ def _column_exists(table: str, column: str) -> bool:
     return any(item["name"] == column for item in inspector.get_columns(table))
 
 
+def _column_exists_on_conn(conn, table: str, column: str) -> bool:
+    inspector = inspect(conn)
+    return any(item["name"] == column for item in inspector.get_columns(table))
+
+
 def _ensure_column(table: str, column: str, definition: str) -> None:
     if _column_exists(table, column):
         return
     def _work(conn):
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
     _run_with_disconnect_retry(_work, retries=2)
+
+
+def _ensure_column_on_conn(conn, table: str, column: str, definition: str) -> None:
+    if _column_exists_on_conn(conn, table, column):
+        return
+    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
 
 
 def _inspector():
@@ -597,25 +608,23 @@ def init_db():
                 )
             )
 
-    _run_with_disconnect_retry(_create_tables, retries=2)
-
-    _ensure_column("search_sessions", "user_id", "TEXT")
-    _ensure_column("job_postings", "user_id", "TEXT")
-    _ensure_column("resumes", "user_id", "TEXT")
-    _ensure_column("applications", "user_id", "TEXT")
-    _ensure_column("chat_threads", "user_id", "TEXT")
-    _ensure_column("job_postings", "description", "TEXT")
-    _ensure_column("job_postings", "job_type", "TEXT")
-    _ensure_column("job_postings", "salary_text", "TEXT")
-    _ensure_column("job_postings", "search_query", "TEXT")
-    _ensure_column("job_postings", "updated_at", "TEXT")
-    _ensure_column("chat_threads", "thread_type", "TEXT NOT NULL DEFAULT 'job'")
-    _ensure_column("chat_threads", "messages_json", "TEXT NOT NULL DEFAULT '[]'")
-    _ensure_column("user_profiles", "full_name", "TEXT")
-    _ensure_column("user_profiles", "phone", "TEXT")
-
     now = _utcnow()
-    def _backfill(conn):
+    def _setup_schema(conn):
+        _create_tables(conn)
+        _ensure_column_on_conn(conn, "search_sessions", "user_id", "TEXT")
+        _ensure_column_on_conn(conn, "job_postings", "user_id", "TEXT")
+        _ensure_column_on_conn(conn, "resumes", "user_id", "TEXT")
+        _ensure_column_on_conn(conn, "applications", "user_id", "TEXT")
+        _ensure_column_on_conn(conn, "chat_threads", "user_id", "TEXT")
+        _ensure_column_on_conn(conn, "job_postings", "description", "TEXT")
+        _ensure_column_on_conn(conn, "job_postings", "job_type", "TEXT")
+        _ensure_column_on_conn(conn, "job_postings", "salary_text", "TEXT")
+        _ensure_column_on_conn(conn, "job_postings", "search_query", "TEXT")
+        _ensure_column_on_conn(conn, "job_postings", "updated_at", "TEXT")
+        _ensure_column_on_conn(conn, "chat_threads", "thread_type", "TEXT NOT NULL DEFAULT 'job'")
+        _ensure_column_on_conn(conn, "chat_threads", "messages_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column_on_conn(conn, "user_profiles", "full_name", "TEXT")
+        _ensure_column_on_conn(conn, "user_profiles", "phone", "TEXT")
         conn.execute(
             text(
                 """
@@ -728,7 +737,7 @@ def init_db():
                 text("UPDATE chat_threads SET messages_json = :messages_json WHERE id = :thread_id"),
                 {"messages_json": _serialize_messages(migrated_messages), "thread_id": thread_id},
             )
-    _run_with_disconnect_retry(_backfill, retries=2)
+    _run_with_disconnect_retry(_setup_schema, retries=2)
 
 
 def save_session(job_title: str, location: str, work_style: str, k: int, user_id: str | None = None) -> int:
