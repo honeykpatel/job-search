@@ -631,6 +631,7 @@ export default function App() {
   const chatInputRef = useRef(null);
   const agentChatInputRef = useRef(null);
   const helperInsightsScrollRef = useRef({ top: 0 });
+  const suppressHelperInsightsAutoHideRef = useRef(false);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
   function resizeComposerTextarea(textarea) {
@@ -910,12 +911,33 @@ export default function App() {
       return;
     }
 
+    const shouldKeepHelperInsightsVisible =
+      page === "Helpers" &&
+      isDesktopViewport &&
+      selectedThread?.thread_type &&
+      selectedThread.thread_type !== "general";
+    if (shouldKeepHelperInsightsVisible) {
+      suppressHelperInsightsAutoHideRef.current = true;
+    }
+
     const rafId = window.requestAnimationFrame(() => {
       chatLog.scrollTop = chatLog.scrollHeight;
     });
 
-    return () => window.cancelAnimationFrame(rafId);
-  }, [page, mobileAgentTab, selectedThreadId, selectedThread?.messages, sendingChat]);
+    let releaseId = null;
+    if (shouldKeepHelperInsightsVisible) {
+      releaseId = window.requestAnimationFrame(() => {
+        suppressHelperInsightsAutoHideRef.current = false;
+      });
+    }
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (releaseId) {
+        window.cancelAnimationFrame(releaseId);
+      }
+    };
+  }, [page, mobileAgentTab, selectedThreadId, selectedThread?.messages, sendingChat, isDesktopViewport, selectedThread?.thread_type]);
 
   useEffect(() => {
     resizeComposerTextarea(chatInputRef.current);
@@ -943,6 +965,7 @@ export default function App() {
     setActiveHelperInsight(null);
     setShowHelperInsightsBar(true);
     helperInsightsScrollRef.current = { top: 0 };
+    suppressHelperInsightsAutoHideRef.current = false;
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -2235,6 +2258,11 @@ export default function App() {
         return;
       }
       const nextTop = event.currentTarget.scrollTop;
+      if (suppressHelperInsightsAutoHideRef.current) {
+        helperInsightsScrollRef.current = { top: nextTop };
+        setShowHelperInsightsBar(true);
+        return;
+      }
       const { top: previousTop } = helperInsightsScrollRef.current;
       const overflowHeight = event.currentTarget.scrollHeight - event.currentTarget.clientHeight;
       const hasEnoughChat = overflowHeight > 120;
