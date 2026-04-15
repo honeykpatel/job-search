@@ -527,6 +527,18 @@ function AppIcon({ name }) {
   );
 }
 
+function parseHelperInsightsMessage(message) {
+  if (message?.role !== "tool") {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(String(message.content || ""));
+    return payload?.kind === "helper_insights" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname || "/");
   const [authMode, setAuthMode] = useState("sign-in");
@@ -612,6 +624,7 @@ export default function App() {
   const [agentChatInput, setAgentChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const [sendingAgentChat, setSendingAgentChat] = useState(false);
+  const [activeHelperInsight, setActiveHelperInsight] = useState(null);
   const chatLogRef = useRef(null);
   const agentChatLogRef = useRef(null);
   const chatInputRef = useRef(null);
@@ -923,6 +936,45 @@ export default function App() {
   useEffect(() => {
     resizeComposerTextarea(agentChatInputRef.current);
   }, [agentChatInput]);
+
+  useEffect(() => {
+    setActiveHelperInsight(null);
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (
+      !session?.access_token ||
+      !selectedThreadId ||
+      page !== "Helpers" ||
+      !isDesktopViewport ||
+      !selectedThread?.thread_type ||
+      selectedThread.thread_type === "general" ||
+      (selectedThread.messages || []).some((message) => parseHelperInsightsMessage(message))
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    void api(`/api/threads/${selectedThreadId}/helper-insights`, {
+      method: "POST",
+      accessToken: session.access_token,
+    })
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        setSelectedThread((current) => (current ? { ...current, messages: data.messages || current.messages } : current));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err.message);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, isDesktopViewport, selectedThreadId, selectedThread, session?.access_token]);
 
   async function bootstrap(accessToken) {
     try {
@@ -1801,7 +1853,7 @@ export default function App() {
     applicationJobs.find((job) => job.id === selectedApplicationJobId) || null;
   function buildCombinedThreadMessages(threadData, threadId) {
     const visibleMessages = (threadData?.messages || []).filter(
-      (message) => showToolDebug || message.role !== "tool"
+      (message) => !parseHelperInsightsMessage(message) && (showToolDebug || message.role !== "tool")
     );
     const threadEvents = timelineEventsByThread[threadId] || [];
     const combinedMessages = [];
@@ -1864,6 +1916,119 @@ export default function App() {
   const bestMatchScore = matches.length ? Math.max(...matches.map((item) => Number(item.score || 0))) : null;
   const leastMatchScore = matches.length ? Math.min(...matches.map((item) => Number(item.score || 0))) : null;
   const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+  const selectedHelperInsights =
+    selectedThread?.thread_type && selectedThread.thread_type !== "general"
+      ? (selectedThread?.messages || []).map(parseHelperInsightsMessage).find(Boolean) || null
+      : null;
+
+  function renderDesktopHelperInsights() {
+    if (!selectedHelperInsights || !selectedThread || !isDesktopViewport || page !== "Helpers") {
+      return null;
+    }
+
+    const insightCards = [
+      {
+        key: "cover-letter",
+        label: "CoverLetter Draft",
+        value: "100 words",
+        content: (
+          <div className="helper-insight-body helper-insight-copy">
+            <p>{selectedHelperInsights.cover_letter_draft}</p>
+            <button
+              type="button"
+              className="action-button subtle helper-insight-copy-button"
+              onClick={() => {
+                if (navigator?.clipboard?.writeText) {
+                  void navigator.clipboard.writeText(selectedHelperInsights.cover_letter_draft);
+                  setNotice("Cover letter draft copied.");
+                } else {
+                  setError("Clipboard access is not available in this browser.");
+                }
+              }}
+            >
+              Copy Draft
+            </button>
+          </div>
+        ),
+      },
+      {
+        key: "skills-needed",
+        label: "Skills Needed",
+        value: `${selectedHelperInsights.skills_needed?.length || 0} priorities`,
+        content: (
+          <div className="helper-insight-body helper-skill-list">
+            {selectedHelperInsights.skills_needed?.length ? (
+              selectedHelperInsights.skills_needed.map((skill) => (
+                <span key={skill} className="status-pill helper-skill-pill">
+                  {skill}
+                </span>
+              ))
+            ) : (
+              <p className="muted">No strong skill signals were found in the job description yet.</p>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "skills-upgrade",
+        label: "Skills to Upgrade",
+        value: `${selectedHelperInsights.skills_to_upgrade?.length || 0} gaps`,
+        content: (
+          <div className="helper-insight-body helper-skill-list">
+            {selectedHelperInsights.skills_to_upgrade?.length ? (
+              selectedHelperInsights.skills_to_upgrade.map((skill) => (
+                <span key={skill} className="status-pill helper-skill-pill muted-pill">
+                  {skill}
+                </span>
+              ))
+            ) : (
+              <p className="muted">This resume already covers the main skills we could detect for the role.</p>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "match",
+        label: "Match",
+        value: `${selectedHelperInsights.match_percent || 0}%`,
+        content: (
+          <div className="helper-insight-body">
+            <div className="helper-match-meter" aria-hidden="true">
+              <span style={{ width: `${selectedHelperInsights.match_percent || 0}%` }} />
+            </div>
+            <p className="muted">
+              Based on overlap between the helper job requirements and the saved resume/profile skills.
+            </p>
+          </div>
+        ),
+      },
+    ];
+
+    return (
+      <div className="helper-insights-shell">
+        <div className="helper-insights-bar" role="tablist" aria-label="Helper insights">
+          {insightCards.map((card) => (
+            <button
+              key={card.key}
+              type="button"
+              role="tab"
+              className={`helper-insight-toggle ${activeHelperInsight === card.key ? "active" : ""}`}
+              aria-selected={activeHelperInsight === card.key}
+              onClick={() => setActiveHelperInsight((current) => (current === card.key ? null : card.key))}
+            >
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+            </button>
+          ))}
+        </div>
+        {activeHelperInsight ? (
+          <div className="helper-insight-panel" role="tabpanel">
+            {insightCards.find((card) => card.key === activeHelperInsight)?.content}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   useEffect(() => {
     if (isDesktopViewport || page !== "Agent") {
       return;
@@ -3279,7 +3444,10 @@ export default function App() {
         {page === "Helpers" ? (
           <section className="grid">
             {selectedThread?.thread_type && selectedThread.thread_type !== "general" ? (
-              renderAgentPanel()
+              <>
+                {renderDesktopHelperInsights()}
+                {renderAgentPanel()}
+              </>
             ) : (
               <div className="panel">
                 <div className="section-heading">

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,145 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
 app = FastAPI(title="Job Pilot API")
+
+HELPER_SKILL_KEYWORDS = [
+    "react",
+    "typescript",
+    "javascript",
+    "python",
+    "java",
+    "c#",
+    "go",
+    "node",
+    "node.js",
+    "next.js",
+    "vue",
+    "angular",
+    "html",
+    "css",
+    "tailwind",
+    "figma",
+    "design systems",
+    "ui",
+    "ux",
+    "product design",
+    "graphql",
+    "rest api",
+    "sql",
+    "postgres",
+    "mysql",
+    "mongodb",
+    "redis",
+    "aws",
+    "azure",
+    "gcp",
+    "docker",
+    "kubernetes",
+    "git",
+    "ci/cd",
+    "testing",
+    "jest",
+    "playwright",
+    "cypress",
+    "machine learning",
+    "data analysis",
+    "nlp",
+    "llm",
+    "openai",
+    "langchain",
+    "fastapi",
+    "flask",
+    "django",
+    "communication",
+    "leadership",
+    "stakeholder management",
+    "product thinking",
+    "problem solving",
+]
+
+
+def _plain_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(value or ""))).strip()
+
+
+def _title_case_skill(value: str) -> str:
+    return " ".join(
+        part.upper() if len(part) <= 3 else f"{part[:1].upper()}{part[1:]}"
+        for part in value.split(" ")
+    )
+
+
+def _extract_skill_list(text: str) -> list[str]:
+    normalized = f" {_plain_text(text).lower()} "
+    matches = [skill for skill in HELPER_SKILL_KEYWORDS if f" {skill.lower()} " in normalized]
+    return [_title_case_skill(skill) for skill in dict.fromkeys(matches)]
+
+
+def _find_helper_insights(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        try:
+            payload = json.loads(str(message.get("content") or ""))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("kind") == "helper_insights":
+            return payload
+    return None
+
+
+def _build_helper_cover_letter(job: dict[str, Any] | None, resume: dict[str, Any] | None, profile: dict[str, Any] | None, messages: list[dict[str, Any]]) -> str:
+    assistant_messages = [
+        _plain_text(message.get("content"))
+        for message in messages
+        if message.get("role") == "assistant" and _plain_text(message.get("content"))
+    ]
+    existing_cover_letter = next(
+        (
+            message
+            for message in assistant_messages
+            if "cover letter" in message.lower()
+            or "dear hiring manager" in message.lower()
+            or "hiring manager" in message.lower()
+        ),
+        None,
+    )
+    if existing_cover_letter:
+        return " ".join(existing_cover_letter.split()[:100])
+
+    strongest_skills = _extract_skill_list(f"{profile.get('summary_text') if profile else ''} {resume.get('text') if resume else ''}")[:3]
+    skill_phrase = ", ".join(strongest_skills) if strongest_skills else "product execution, communication, and role-specific problem solving"
+    job_title = job.get("title") if job else "this role"
+    company = job.get("company") if job else "your team"
+    return " ".join(
+        [
+            f"Dear Hiring Manager, I am excited to apply for the {job_title} role at {company}.",
+            f"My background aligns well with the needs of this opportunity, especially in {skill_phrase}.",
+            "I can contribute quickly, communicate clearly, and turn priorities into reliable execution.",
+            f"I would value the opportunity to discuss how I can support {company}'s goals and add impact from day one.",
+        ]
+    )
+
+
+def _generate_helper_insights(thread: dict[str, Any], messages: list[dict[str, Any]], current_user_id: str) -> dict[str, Any]:
+    job = get_job(thread["job_id"], user_id=current_user_id) if thread.get("job_id") else None
+    resume = get_resume(thread["resume_id"], user_id=current_user_id) if thread.get("resume_id") else None
+    profile = get_user_profile(user_id=current_user_id) or {}
+    important_skills = _extract_skill_list(f"{job.get('title') if job else ''} {job.get('description') if job else ''}")[:8]
+    resume_skills = _extract_skill_list(f"{resume.get('text') if resume else ''} {profile.get('summary_text') or ''}")
+    skills_to_upgrade = [skill for skill in important_skills if skill not in resume_skills][:6]
+    overlap_count = sum(1 for skill in important_skills if skill in resume_skills)
+    match_percent = round((overlap_count / len(important_skills)) * 100) if important_skills else 0
+
+    return {
+        "kind": "helper_insights",
+        "version": 1,
+        "thread_id": thread["id"],
+        "cover_letter_draft": _build_helper_cover_letter(job, resume, profile, messages),
+        "skills_needed": important_skills,
+        "skills_to_upgrade": skills_to_upgrade,
+        "match_percent": match_percent,
+    }
 
 app.add_middleware(
     CORSMiddleware,
@@ -756,6 +896,25 @@ def send_message(thread_id: int, payload: ChatRequest, current_user_id: str = De
         "tool_messages": tool_messages if payload.show_tool_debug else [],
         "messages": get_chat_messages(thread_id, user_id=current_user_id),
     }
+
+
+@app.post("/api/threads/{thread_id}/helper-insights")
+def ensure_helper_insights(thread_id: int, current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
+    thread = get_chat_thread(thread_id, user_id=current_user_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    if thread.get("thread_type") == "general":
+        raise HTTPException(status_code=400, detail="Helper insights are only available for helper threads")
+
+    messages = get_chat_messages(thread_id, user_id=current_user_id)
+    existing = _find_helper_insights(messages)
+    if existing:
+        return {"insights": existing, "messages": messages}
+
+    generated = _generate_helper_insights(thread, messages, current_user_id)
+    add_chat_message(thread_id, "tool", json.dumps(generated), user_id=current_user_id)
+    next_messages = get_chat_messages(thread_id, user_id=current_user_id)
+    return {"insights": generated, "messages": next_messages}
 
 
 @app.post("/api/threads/{thread_id}/actions/approve")
