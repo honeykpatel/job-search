@@ -137,8 +137,9 @@ def _column_exists(table: str, column: str) -> bool:
 def _ensure_column(table: str, column: str, definition: str) -> None:
     if _column_exists(table, column):
         return
-    with ENGINE.begin() as conn:
+    def _work(conn):
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+    _run_with_disconnect_retry(_work, retries=2)
 
 
 def _inspector():
@@ -336,7 +337,7 @@ def _application_row_to_dict(row: tuple) -> dict[str, Any]:
 
 
 def init_db():
-    with ENGINE.begin() as conn:
+    def _create_tables(conn):
         if DATABASE_URL.startswith("sqlite"):
             conn.execute(
                 text(
@@ -596,6 +597,8 @@ def init_db():
                 )
             )
 
+    _run_with_disconnect_retry(_create_tables, retries=2)
+
     _ensure_column("search_sessions", "user_id", "TEXT")
     _ensure_column("job_postings", "user_id", "TEXT")
     _ensure_column("resumes", "user_id", "TEXT")
@@ -612,7 +615,7 @@ def init_db():
     _ensure_column("user_profiles", "phone", "TEXT")
 
     now = _utcnow()
-    with ENGINE.begin() as conn:
+    def _backfill(conn):
         conn.execute(
             text(
                 """
@@ -725,6 +728,7 @@ def init_db():
                 text("UPDATE chat_threads SET messages_json = :messages_json WHERE id = :thread_id"),
                 {"messages_json": _serialize_messages(migrated_messages), "thread_id": thread_id},
             )
+    _run_with_disconnect_retry(_backfill, retries=2)
 
 
 def save_session(job_title: str, location: str, work_style: str, k: int, user_id: str | None = None) -> int:
