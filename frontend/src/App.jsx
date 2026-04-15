@@ -2337,9 +2337,9 @@ export default function App() {
             ) : null}
             {!isMobileAgentView ? (
               <div className="chat-thread-meta">
-                <span className={`sidebar-type-badge ${thread?.thread_type === "general" ? "deep" : "job"}`}>
-                  {thread?.thread_type === "general" ? "Agent" : "Helper"}
-                </span>
+                {thread?.thread_type === "general" ? (
+                  <span className="sidebar-type-badge deep">Agent</span>
+                ) : null}
                 {thread?.thread_type !== "general" ? (
                   <div className="chat-thread-summary">
                     <strong>{helperHeaderTitle}</strong>
