@@ -1175,10 +1175,10 @@ button {
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 7;
   width: min(100%, 920px);
   margin: 0 auto;
-  padding: 8px 0 0;
+  padding: 8px 0 6px;
   background: linear-gradient(180deg, rgba(13, 13, 14, 0.98), rgba(13, 13, 14, 0.82) 72%, transparent);
 }
 
@@ -1542,12 +1542,22 @@ button {
 
 .helper-insights-shell {
   position: sticky;
-  top: 18px;
-  z-index: 7;
+  top: 54px;
+  z-index: 6;
   display: grid;
   gap: 10px;
   width: min(100%, 920px);
   margin: 0 auto;
+  padding-top: 4px;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.helper-insights-shell.hidden {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
 }
 
 .helper-insights-bar {

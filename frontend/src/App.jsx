@@ -625,10 +625,12 @@ export default function App() {
   const [sendingChat, setSendingChat] = useState(false);
   const [sendingAgentChat, setSendingAgentChat] = useState(false);
   const [activeHelperInsight, setActiveHelperInsight] = useState(null);
+  const [showHelperInsightsBar, setShowHelperInsightsBar] = useState(true);
   const chatLogRef = useRef(null);
   const agentChatLogRef = useRef(null);
   const chatInputRef = useRef(null);
   const agentChatInputRef = useRef(null);
+  const helperInsightsScrollRef = useRef({ top: 0 });
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
   function resizeComposerTextarea(textarea) {
@@ -939,6 +941,8 @@ export default function App() {
 
   useEffect(() => {
     setActiveHelperInsight(null);
+    setShowHelperInsightsBar(true);
+    helperInsightsScrollRef.current = { top: 0 };
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -2005,7 +2009,7 @@ export default function App() {
     ];
 
     return (
-      <div className="helper-insights-shell">
+      <div className={`helper-insights-shell ${showHelperInsightsBar ? "" : "hidden"}`}>
         <div className="helper-insights-bar" role="tablist" aria-label="Helper insights">
           {insightCards.map((card) => (
             <button
@@ -2204,6 +2208,7 @@ export default function App() {
     const showAgentHighlight =
       thread?.thread_type === "general" && (!isMobileAgentView || mobileAgentTab === "agent");
     const showThinkingState = sending && showChatBody;
+    const showDesktopHelperHeader = !isDesktopRail && !isMobileAgentView && thread?.thread_type !== "general";
     const threadJob = jobsById[thread?.job_id];
     const threadResume = resumesById[thread?.resume_id];
     const helperHeaderTitle = thread?.title || `${threadJob?.title || "Untitled"} @ ${threadJob?.company || "Unknown"}`;
@@ -2224,6 +2229,25 @@ export default function App() {
           ];
     const marqueePrompts = [...quickPrompts, ...quickPrompts];
     const showPendingAction = pendingAction && threadId === selectedThreadId;
+
+    function handleChatLogScroll(event) {
+      if (!showDesktopHelperHeader) {
+        return;
+      }
+      const nextTop = event.currentTarget.scrollTop;
+      const { top: previousTop } = helperInsightsScrollRef.current;
+      const hasEnoughChat = event.currentTarget.scrollHeight - event.currentTarget.clientHeight > 220;
+
+      if (!hasEnoughChat || nextTop < 64) {
+        setShowHelperInsightsBar(true);
+      } else if (nextTop > previousTop + 8) {
+        setShowHelperInsightsBar(false);
+      } else if (nextTop < previousTop - 8) {
+        setShowHelperInsightsBar(true);
+      }
+
+      helperInsightsScrollRef.current = { top: nextTop };
+    }
 
     return (
       <div
@@ -2340,9 +2364,14 @@ export default function App() {
             </div>
           ) : null}
         </div>
+        {showDesktopHelperHeader ? renderDesktopHelperInsights() : null}
         {showMobileHelperList ? renderMobileHelperList() : null}
         {showChatBody ? (
-          <div className={`chat-log ${isMobileAgentView ? "mobile-chat-log" : ""}`} ref={logRef}>
+          <div
+            className={`chat-log ${isMobileAgentView ? "mobile-chat-log" : ""}`}
+            ref={logRef}
+            onScroll={handleChatLogScroll}
+          >
             {messages.length ? (
               messages.map((message) =>
                 message.role === "timeline_event" ? (
@@ -3456,10 +3485,7 @@ export default function App() {
         {page === "Helpers" ? (
           <section className="grid">
             {selectedThread?.thread_type && selectedThread.thread_type !== "general" ? (
-              <>
-                {renderDesktopHelperInsights()}
-                {renderAgentPanel()}
-              </>
+              renderAgentPanel()
             ) : (
               <div className="panel">
                 <div className="section-heading">
