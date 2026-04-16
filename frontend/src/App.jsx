@@ -627,6 +627,7 @@ export default function App() {
   const [activeHelperInsight, setActiveHelperInsight] = useState(null);
   const [showHelperInsightsBar, setShowHelperInsightsBar] = useState(true);
   const [helperInsightsByThreadId, setHelperInsightsByThreadId] = useState({});
+  const [helperInsightsMetaByThreadId, setHelperInsightsMetaByThreadId] = useState({});
   const chatLogRef = useRef(null);
   const agentChatLogRef = useRef(null);
   const chatInputRef = useRef(null);
@@ -991,13 +992,30 @@ export default function App() {
         if (cancelled) {
           return;
         }
-        if (data?.insights) {
-          setHelperInsightsByThreadId((current) => ({ ...current, [selectedThreadId]: data.insights }));
-        }
+        setHelperInsightsMetaByThreadId((current) => ({
+          ...current,
+          [selectedThreadId]: {
+            status: data?.status || (data?.insights ? "ready" : "idle"),
+            error: data?.error || null,
+          },
+        }));
+        setHelperInsightsByThreadId((current) => {
+          if (!data?.insights) {
+            return current;
+          }
+          return { ...current, [selectedThreadId]: data.insights };
+        });
         setSelectedThread((current) => (current ? { ...current, messages: data.messages || current.messages } : current));
       })
       .catch((err) => {
         if (!cancelled) {
+          setHelperInsightsMetaByThreadId((current) => ({
+            ...current,
+            [selectedThreadId]: {
+              status: "failed",
+              error: err.message,
+            },
+          }));
           setError(err.message);
         }
       });
@@ -1106,6 +1124,18 @@ export default function App() {
     try {
       setError("");
       const data = await fetchThread(threadId);
+      if (data?.helper_insights) {
+        setHelperInsightsByThreadId((current) => ({ ...current, [threadId]: data.helper_insights }));
+      }
+      if (data?.thread_type && data.thread_type !== "general") {
+        setHelperInsightsMetaByThreadId((current) => ({
+          ...current,
+          [threadId]: {
+            status: data.helper_insights_status || (data.helper_insights ? "ready" : "idle"),
+            error: data.helper_insights_error || null,
+          },
+        }));
+      }
       setSelectedThread(data);
     } catch (err) {
       setError(err.message);
@@ -1981,16 +2011,60 @@ export default function App() {
   const bestMatchScore = matches.length ? Math.max(...matches.map((item) => Number(item.score || 0))) : null;
   const leastMatchScore = matches.length ? Math.min(...matches.map((item) => Number(item.score || 0))) : null;
   const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+  const selectedHelperInsightsMeta =
+    selectedThread?.thread_type && selectedThread.thread_type !== "general"
+      ? helperInsightsMetaByThreadId[selectedThread.id] || {
+          status: selectedThread?.helper_insights_status || (selectedThread?.helper_insights ? "ready" : "idle"),
+          error: selectedThread?.helper_insights_error || null,
+        }
+      : null;
   const selectedHelperInsights =
     selectedThread?.thread_type && selectedThread.thread_type !== "general"
-      ? helperInsightsByThreadId[selectedThread.id] ||
+      ? selectedThread?.helper_insights ||
+        helperInsightsByThreadId[selectedThread.id] ||
         (selectedThread?.messages || []).map(parseHelperInsightsMessage).find(Boolean) ||
         null
       : null;
 
   function renderDesktopHelperInsights() {
-    if (!selectedHelperInsights || !selectedThread || !isDesktopViewport || page !== "Helpers") {
+    if (!selectedThread || !isDesktopViewport || page !== "Helpers") {
       return null;
+    }
+
+    if (selectedHelperInsightsMeta?.status === "loading" && !selectedHelperInsights) {
+      return (
+        <div className={`helper-insights-shell ${showHelperInsightsBar ? "" : "hidden"}`}>
+          <div className="helper-insight-panel" role="status" aria-live="polite">
+            <div className="helper-insight-body">
+              <p>Loading helper insights...</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (selectedHelperInsightsMeta?.status === "failed" && !selectedHelperInsights) {
+      return (
+        <div className={`helper-insights-shell ${showHelperInsightsBar ? "" : "hidden"}`}>
+          <div className="helper-insight-panel" role="status" aria-live="polite">
+            <div className="helper-insight-body">
+              <p>{selectedHelperInsightsMeta.error || "Helper insights could not be generated yet."}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (!selectedHelperInsights) {
+      return (
+        <div className={`helper-insights-shell ${showHelperInsightsBar ? "" : "hidden"}`}>
+          <div className="helper-insight-panel" role="status" aria-live="polite">
+            <div className="helper-insight-body">
+              <p>Helper insights are not ready yet.</p>
+            </div>
+          </div>
+        </div>
+      );
     }
 
     const insightCards = [

@@ -39,7 +39,7 @@ ADMIN_TABLE_RULES: dict[str, dict[str, Any]] = {
         "deletable": True,
     },
     "chat_threads": {
-        "editable": {"title", "thread_type", "messages_json"},
+        "editable": {"title", "thread_type", "messages_json", "helper_insights_json", "helper_insights_status", "helper_insights_error"},
         "creatable": set(),
         "deletable": True,
     },
@@ -127,6 +127,16 @@ def _deserialize_messages(raw: Any) -> list[dict[str, Any]]:
 
 def _serialize_messages(messages: list[dict[str, Any]]) -> str:
     return json.dumps(messages, ensure_ascii=False)
+
+
+def _deserialize_json_object(raw: Any) -> dict[str, Any] | None:
+    if raw in (None, ""):
+        return None
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _column_exists(table: str, column: str) -> bool:
@@ -442,6 +452,9 @@ def init_db():
                         resume_id INTEGER,
                         application_id INTEGER,
                         messages_json TEXT NOT NULL DEFAULT '[]',
+                        helper_insights_json TEXT,
+                        helper_insights_status TEXT NOT NULL DEFAULT 'idle',
+                        helper_insights_error TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
@@ -571,6 +584,9 @@ def init_db():
                         resume_id INTEGER,
                         application_id INTEGER,
                         messages_json TEXT NOT NULL DEFAULT '[]',
+                        helper_insights_json TEXT,
+                        helper_insights_status TEXT NOT NULL DEFAULT 'idle',
+                        helper_insights_error TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
@@ -623,6 +639,9 @@ def init_db():
         _ensure_column_on_conn(conn, "job_postings", "updated_at", "TEXT")
         _ensure_column_on_conn(conn, "chat_threads", "thread_type", "TEXT NOT NULL DEFAULT 'job'")
         _ensure_column_on_conn(conn, "chat_threads", "messages_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column_on_conn(conn, "chat_threads", "helper_insights_json", "TEXT")
+        _ensure_column_on_conn(conn, "chat_threads", "helper_insights_status", "TEXT NOT NULL DEFAULT 'idle'")
+        _ensure_column_on_conn(conn, "chat_threads", "helper_insights_error", "TEXT")
         _ensure_column_on_conn(conn, "user_profiles", "full_name", "TEXT")
         _ensure_column_on_conn(conn, "user_profiles", "phone", "TEXT")
         conn.execute(
@@ -649,6 +668,15 @@ def init_db():
                 UPDATE chat_threads
                 SET messages_json = '[]'
                 WHERE messages_json IS NULL OR messages_json = ''
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE chat_threads
+                SET helper_insights_status = 'idle'
+                WHERE helper_insights_status IS NULL OR helper_insights_status = ''
                 """
             )
         )
@@ -1356,13 +1384,47 @@ def touch_chat_thread(thread_id: int, user_id: str | None = None):
         )
 
 
+def set_chat_thread_helper_insights(
+    thread_id: int,
+    *,
+    insights: dict[str, Any] | None = None,
+    status: str = "ready",
+    error: str | None = None,
+    user_id: str | None = None,
+):
+    resolved_user_id = _resolve_user_id(user_id)
+    with ENGINE.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE chat_threads
+                SET helper_insights_json = :helper_insights_json,
+                    helper_insights_status = :helper_insights_status,
+                    helper_insights_error = :helper_insights_error,
+                    updated_at = :updated_at
+                WHERE id = :thread_id AND user_id = :user_id
+                """
+            ),
+            {
+                "helper_insights_json": json.dumps(insights, ensure_ascii=False) if insights else None,
+                "helper_insights_status": status,
+                "helper_insights_error": error,
+                "updated_at": _utcnow(),
+                "thread_id": int(thread_id),
+                "user_id": resolved_user_id,
+            },
+        )
+
+
 def list_chat_threads(limit: int = 50, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
     with ENGINE.begin() as conn:
         result = conn.execute(
             text(
                 """
-                SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+                SELECT id, title, thread_type, job_id, resume_id, application_id,
+                       helper_insights_json, helper_insights_status, helper_insights_error,
+                       created_at, updated_at
                 FROM chat_threads
                 WHERE user_id = :user_id
                 ORDER BY updated_at DESC, created_at DESC
@@ -1380,8 +1442,11 @@ def list_chat_threads(limit: int = 50, user_id: str | None = None):
                 "job_id": row[3],
                 "resume_id": row[4],
                 "application_id": row[5],
-                "created_at": row[6],
-                "updated_at": row[7],
+                "helper_insights": _deserialize_json_object(row[6]),
+                "helper_insights_status": row[7] or "idle",
+                "helper_insights_error": row[8],
+                "created_at": row[9],
+                "updated_at": row[10],
             }
             for row in rows
         ]
@@ -1393,7 +1458,9 @@ def get_chat_thread(thread_id: int, user_id: str | None = None):
         result = conn.execute(
             text(
                 """
-                SELECT id, title, thread_type, job_id, resume_id, application_id, created_at, updated_at
+                SELECT id, title, thread_type, job_id, resume_id, application_id,
+                       helper_insights_json, helper_insights_status, helper_insights_error,
+                       created_at, updated_at
                 FROM chat_threads
                 WHERE id = :thread_id AND user_id = :user_id
                 LIMIT 1
@@ -1411,8 +1478,11 @@ def get_chat_thread(thread_id: int, user_id: str | None = None):
             "job_id": row[3],
             "resume_id": row[4],
             "application_id": row[5],
-            "created_at": row[6],
-            "updated_at": row[7],
+            "helper_insights": _deserialize_json_object(row[6]),
+            "helper_insights_status": row[7] or "idle",
+            "helper_insights_error": row[8],
+            "created_at": row[9],
+            "updated_at": row[10],
         }
 
 

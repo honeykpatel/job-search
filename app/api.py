@@ -62,6 +62,7 @@ from storage.db import (
     save_session,
     save_user_profile,
     search_jobs as db_search_jobs,
+    set_chat_thread_helper_insights,
     touch_chat_thread,
     update_chat_thread_title,
     update_resume_filename,
@@ -916,9 +917,23 @@ def ensure_helper_insights(thread_id: int, current_user_id: str = Depends(requir
         raise HTTPException(status_code=400, detail="Helper insights are only available for helper threads")
 
     messages = get_chat_messages(thread_id, user_id=current_user_id)
-    existing = _find_helper_insights(messages)
+    existing = thread.get("helper_insights") or _find_helper_insights(messages)
     if existing:
-        return {"insights": existing, "messages": messages}
+        if not thread.get("helper_insights"):
+            set_chat_thread_helper_insights(
+                thread_id,
+                insights=existing,
+                status="ready",
+                error=None,
+                user_id=current_user_id,
+            )
+            thread = get_chat_thread(thread_id, user_id=current_user_id) or thread
+        return {
+            "insights": existing,
+            "status": thread.get("helper_insights_status") or "ready",
+            "error": thread.get("helper_insights_error"),
+            "messages": messages,
+        }
 
     thread_job = get_job(thread["job_id"], user_id=current_user_id) if thread.get("job_id") else None
     thread_resume = get_resume(thread["resume_id"], user_id=current_user_id) if thread.get("resume_id") else None
@@ -929,21 +944,46 @@ def ensure_helper_insights(thread_id: int, current_user_id: str = Depends(requir
         profile=profile,
         thread_type="job",
     )
-    generated = {
-        "kind": "helper_insights",
-        "version": 2,
-        "thread_id": thread["id"],
-        **generate_helper_insights(
-            thread_context=thread_context,
-            history_messages=build_langchain_messages(_recent_helper_context_messages(messages)),
-            thread_job_id=thread.get("job_id"),
-            thread_resume_id=thread.get("resume_id"),
-            thread_user_id=current_user_id,
-        ),
-    }
-    add_chat_message(thread_id, "tool", json.dumps(generated), user_id=current_user_id)
+    set_chat_thread_helper_insights(thread_id, insights=None, status="loading", error=None, user_id=current_user_id)
+    try:
+        generated = {
+            "kind": "helper_insights",
+            "version": 2,
+            "thread_id": thread["id"],
+            **generate_helper_insights(
+                thread_context=thread_context,
+                history_messages=build_langchain_messages(_recent_helper_context_messages(messages)),
+                thread_job_id=thread.get("job_id"),
+                thread_resume_id=thread.get("resume_id"),
+                thread_user_id=current_user_id,
+            ),
+        }
+    except Exception as exc:
+        error_message = str(exc) or "Helper insights generation failed."
+        set_chat_thread_helper_insights(
+            thread_id,
+            insights=None,
+            status="failed",
+            error=error_message,
+            user_id=current_user_id,
+        )
+        thread = get_chat_thread(thread_id, user_id=current_user_id) or thread
+        return {
+            "insights": None,
+            "status": thread.get("helper_insights_status") or "failed",
+            "error": thread.get("helper_insights_error") or error_message,
+            "messages": messages,
+        }
+
+    set_chat_thread_helper_insights(
+        thread_id,
+        insights=generated,
+        status="ready",
+        error=None,
+        user_id=current_user_id,
+    )
     next_messages = get_chat_messages(thread_id, user_id=current_user_id)
-    return {"insights": generated, "messages": next_messages}
+    return {"insights": generated, "status": "ready", "error": None, "messages": next_messages}
 
 
 @app.post("/api/threads/{thread_id}/actions/approve")
