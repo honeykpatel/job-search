@@ -636,6 +636,26 @@ export default function App() {
   const suppressHelperInsightsAutoHideRef = useRef(false);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
+  function syncHelperInsightsVisibility(chatLog, { forceVisible = false } = {}) {
+    if (!chatLog) {
+      return;
+    }
+    const nextTop = chatLog.scrollTop;
+    const overflowHeight = chatLog.scrollHeight - chatLog.clientHeight;
+    const hasEnoughChat = overflowHeight > 120;
+
+    helperInsightsScrollRef.current = { top: nextTop };
+
+    if (!hasEnoughChat) {
+      setShowHelperInsightsBar(true);
+      return;
+    }
+
+    if (forceVisible) {
+      setShowHelperInsightsBar(true);
+    }
+  }
+
   function resizeComposerTextarea(textarea) {
     if (!textarea) {
       return;
@@ -924,12 +944,16 @@ export default function App() {
 
     const rafId = window.requestAnimationFrame(() => {
       chatLog.scrollTop = chatLog.scrollHeight;
+      if (shouldKeepHelperInsightsVisible) {
+        syncHelperInsightsVisibility(chatLog, { forceVisible: true });
+      }
     });
 
     let releaseId = null;
     if (shouldKeepHelperInsightsVisible) {
       releaseId = window.requestAnimationFrame(() => {
         suppressHelperInsightsAutoHideRef.current = false;
+        syncHelperInsightsVisibility(chatLog, { forceVisible: true });
       });
     }
 
@@ -969,6 +993,20 @@ export default function App() {
     helperInsightsScrollRef.current = { top: 0 };
     suppressHelperInsightsAutoHideRef.current = false;
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (page !== "Helpers" || !isDesktopViewport || selectedThread?.thread_type === "general") {
+      return;
+    }
+    const chatLog = chatLogRef.current;
+    if (!chatLog) {
+      return;
+    }
+    const rafId = window.requestAnimationFrame(() => {
+      syncHelperInsightsVisibility(chatLog, { forceVisible: true });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [page, isDesktopViewport, selectedThreadId, helperInsightsMetaByThreadId, selectedThread?.thread_type]);
 
   useEffect(() => {
     if (
@@ -2371,14 +2409,14 @@ export default function App() {
       if (!showDesktopHelperHeader) {
         return;
       }
-      const nextTop = event.currentTarget.scrollTop;
+      const chatLog = event.currentTarget;
+      const nextTop = chatLog.scrollTop;
       if (suppressHelperInsightsAutoHideRef.current) {
-        helperInsightsScrollRef.current = { top: nextTop };
-        setShowHelperInsightsBar(true);
+        syncHelperInsightsVisibility(chatLog, { forceVisible: true });
         return;
       }
       const { top: previousTop } = helperInsightsScrollRef.current;
-      const overflowHeight = event.currentTarget.scrollHeight - event.currentTarget.clientHeight;
+      const overflowHeight = chatLog.scrollHeight - chatLog.clientHeight;
       const hasEnoughChat = overflowHeight > 120;
 
       if (!hasEnoughChat || nextTop < 12) {
@@ -2389,7 +2427,7 @@ export default function App() {
         setShowHelperInsightsBar(true);
       }
 
-      helperInsightsScrollRef.current = { top: nextTop };
+      syncHelperInsightsVisibility(chatLog);
     }
 
     return (
