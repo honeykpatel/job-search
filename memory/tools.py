@@ -79,6 +79,13 @@ def _helper_job_candidates(job_reference: str, limit: int = 5) -> list[dict]:
             "location": job.get("location"),
             "source": job.get("source"),
             "created_at": job.get("created_at"),
+            "display_label": " | ".join(
+                [
+                    str(job.get("title") or "Untitled role"),
+                    str(job.get("company") or "Unknown company"),
+                    str(job.get("location") or "Unknown location"),
+                ]
+            ),
         }
         for job in matches
     ]
@@ -91,6 +98,7 @@ def _helper_resume_options(limit: int = 20) -> list[dict]:
             "id": resume["id"],
             "filename": resume["filename"],
             "created_at": resume["created_at"],
+            "display_label": resume["filename"] or "Untitled resume",
         }
         for resume in resumes
     ]
@@ -329,6 +337,7 @@ def list_helpers(limit: int = 50) -> list[dict]:
             "resume_id": thread["resume_id"],
             "created_at": thread["created_at"],
             "updated_at": thread["updated_at"],
+            "display_label": thread["title"] or "Untitled Helper",
         }
         for thread in threads
         if thread.get("thread_type") == "job"
@@ -350,6 +359,31 @@ def create_helper(
     """
     resolved_job = None
     resolved_job_id = (job_id or "").strip()
+    if not resolved_job_id and not (job_reference or "").strip():
+        recent_jobs = list_recent_jobs(5, user_id=_current_user_id())
+        return {
+            "ok": False,
+            "needs_job_selection": True,
+            "message": "A saved job is required to create a Helper. Ask the user which saved job to use and present the options clearly.",
+            "job_candidates": [
+                {
+                    "id": job.get("id"),
+                    "title": job.get("title"),
+                    "company": job.get("company"),
+                    "location": job.get("location"),
+                    "source": job.get("source"),
+                    "created_at": job.get("created_at"),
+                    "display_label": " | ".join(
+                        [
+                            str(job.get("title") or "Untitled role"),
+                            str(job.get("company") or "Unknown company"),
+                            str(job.get("location") or "Unknown location"),
+                        ]
+                    ),
+                }
+                for job in recent_jobs
+            ],
+        }
     if resolved_job_id:
         resolved_job = get_job(resolved_job_id, user_id=_current_user_id())
         if not resolved_job:
@@ -361,7 +395,7 @@ def create_helper(
                 return {
                     "ok": False,
                     "needs_job_selection": True,
-                    "message": f"No saved job was found for job_id '{resolved_job_id}'.",
+                    "message": "No matching saved job was found. Ask the user to choose from the available saved jobs.",
                     "job_candidates": fallback_candidates,
                 }
     else:
@@ -377,7 +411,7 @@ def create_helper(
             return {
                 "ok": False,
                 "needs_job_selection": True,
-                "message": "Multiple saved jobs matched that job reference. Ask the user to choose one.",
+                "message": "Multiple saved jobs matched that request. Ask the user to choose one of the available options.",
                 "job_candidates": candidates,
             }
         resolved_job_id = str(candidates[0]["id"])
@@ -412,7 +446,7 @@ def create_helper(
         return {
             "ok": False,
             "needs_resume_selection": True,
-            "message": f"No saved resume was found for resume_id '{resume_id}'.",
+            "message": "No matching saved resume was found. Ask the user to choose one of the available saved resumes.",
             "job": {
                 "id": resolved_job.get("id"),
                 "title": resolved_job.get("title"),
@@ -477,7 +511,11 @@ def rename_helper(helper_id: int, title: str, confirm: bool = False) -> dict:
     """Rename an existing Helper thread. Preview first unless confirm=true."""
     helper = get_chat_thread(int(helper_id), user_id=_current_user_id())
     if not helper or helper.get("thread_type") != "job":
-        raise ValueError(f"Unknown Helper id: {helper_id}")
+        return {
+            "ok": False,
+            "message": "That Helper could not be found. Ask the user which existing Helper they want to use.",
+            "helper_options": list_helpers(20),
+        }
 
     new_title = title.strip()
     if not new_title:
@@ -515,7 +553,11 @@ def delete_helper(helper_id: int, confirm: bool = False) -> dict:
     """Delete an existing Helper thread. Preview first unless confirm=true."""
     helper = get_chat_thread(int(helper_id), user_id=_current_user_id())
     if not helper or helper.get("thread_type") != "job":
-        raise ValueError(f"Unknown Helper id: {helper_id}")
+        return {
+            "ok": False,
+            "message": "That Helper could not be found. Ask the user which existing Helper they want to use.",
+            "helper_options": list_helpers(20),
+        }
 
     preview = {
         "helper_id": int(helper_id),
