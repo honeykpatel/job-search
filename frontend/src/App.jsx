@@ -317,6 +317,20 @@ function normalizePhoneDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function classifyPendingActionReply(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (["yes", "y", "approve", "approved", "confirm", "confirmed", "ok", "okay", "do it", "create"].includes(normalized)) {
+    return "approve";
+  }
+  if (["no", "n", "cancel", "reject", "stop", "don't", "do not"].includes(normalized)) {
+    return "reject";
+  }
+  return null;
+}
+
 function parseProfileSummary(summaryText) {
   const base = emptyProfileForm();
   const text = (summaryText || "").trim();
@@ -1643,6 +1657,20 @@ export default function App() {
     const content = chatInput.trim();
     if (!selectedThreadId || !content) {
       return;
+    }
+
+    if (pendingAction?.preview?.action && selectedThreadId === selectedThread?.id) {
+      const decision = classifyPendingActionReply(content);
+      if (decision === "approve") {
+        setChatInput("");
+        await handleApprovePendingAction();
+        return;
+      }
+      if (decision === "reject") {
+        setChatInput("");
+        handleRejectPendingAction();
+        return;
+      }
     }
 
     const optimisticMessage = {
