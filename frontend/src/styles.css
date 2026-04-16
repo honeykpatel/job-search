@@ -176,8 +176,8 @@ button {
 }
 
 .sidebar-title-logo {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
   flex: 0 0 auto;
 }
@@ -1243,12 +1243,12 @@ button {
 }
 
 .desktop-agent-panel .chat-message.assistant {
-  padding-left: 44px;
+  padding-left: 34px;
 }
 
 .desktop-agent-panel .chat-message.assistant::before {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
 }
 
 .desktop-agent-panel .chat-message.user .markdown-message {
@@ -1701,7 +1701,7 @@ button {
 
 .chat-message.assistant {
   position: relative;
-  padding: 0 0 0 58px;
+  padding: 0 0 0 48px;
 }
 
 .chat-message.assistant::before {
@@ -1709,8 +1709,8 @@ button {
   position: absolute;
   left: 0;
   top: 2px;
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   background: url("/JobPilotLogo.png") center / contain no-repeat;
 }
 
