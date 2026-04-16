@@ -1715,6 +1715,10 @@ button {
   background: url("/JobPilotLogo.png") center / contain no-repeat;
 }
 
+.agent-chat-panel-agent .chat-message.assistant::before {
+  background-image: url("/greenLogo.png");
+}
+
 .agent-chat-panel-agent .chat-message.assistant .markdown-message {
   color: #8de8ae;
 }
