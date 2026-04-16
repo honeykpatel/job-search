@@ -1712,12 +1712,7 @@ button {
   top: 2px;
   width: 40px;
   height: 40px;
-  border-radius: 14px;
-  border: 1px solid rgba(125, 225, 167, 0.18);
-  background:
-    url("/JobPilotLogo.png") center / 74% no-repeat,
-    linear-gradient(180deg, rgba(22, 24, 23, 0.96), rgba(12, 14, 13, 0.94));
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  background: url("/JobPilotLogo.png") center / contain no-repeat;
 }
 
 .agent-chat-panel-agent .chat-message.assistant .markdown-message {
