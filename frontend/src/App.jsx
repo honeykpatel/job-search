@@ -1372,26 +1372,43 @@ export default function App() {
 
   async function handleSendChat(event) {
     event.preventDefault();
-    if (!selectedThreadId || !chatInput.trim()) {
+    const content = chatInput.trim();
+    if (!selectedThreadId || !content) {
       return;
     }
+
+    const optimisticMessage = {
+      id: `pending-user-${Date.now()}`,
+      role: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
 
     try {
       setSendingChat(true);
       setError("");
+      setSelectedThread((current) => ({
+        ...(current || {}),
+        messages: [...(current?.messages || []), optimisticMessage],
+      }));
+      setChatInput("");
       const response = await api(`/api/threads/${selectedThreadId}/messages`, {
         method: "POST",
         body: JSON.stringify({
-          content: chatInput,
+          content,
           show_tool_debug: showToolDebug,
         }),
         accessToken: session?.access_token,
       });
       setSelectedThread((current) => ({ ...(current || {}), messages: response.messages }));
       setPendingAction(response.pending_action || null);
-      setChatInput("");
       await refreshCollections();
     } catch (err) {
+      setSelectedThread((current) => ({
+        ...(current || {}),
+        messages: (current?.messages || []).filter((message) => message.id !== optimisticMessage.id),
+      }));
+      setChatInput(content);
       setError(err.message);
     } finally {
       setSendingChat(false);
@@ -1400,25 +1417,42 @@ export default function App() {
 
   async function handleSendAgentChat(event) {
     event.preventDefault();
-    if (!mainAgentThread?.id || !agentChatInput.trim()) {
+    const content = agentChatInput.trim();
+    if (!mainAgentThread?.id || !content) {
       return;
     }
+
+    const optimisticMessage = {
+      id: `pending-agent-user-${Date.now()}`,
+      role: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
 
     try {
       setSendingAgentChat(true);
       setError("");
+      setAgentThread((current) => ({
+        ...(current || {}),
+        messages: [...(current?.messages || []), optimisticMessage],
+      }));
+      setAgentChatInput("");
       const response = await api(`/api/threads/${mainAgentThread.id}/messages`, {
         method: "POST",
         body: JSON.stringify({
-          content: agentChatInput,
+          content,
           show_tool_debug: showToolDebug,
         }),
         accessToken: session?.access_token,
       });
       setAgentThread((current) => ({ ...(current || {}), messages: response.messages }));
-      setAgentChatInput("");
       await refreshCollections();
     } catch (err) {
+      setAgentThread((current) => ({
+        ...(current || {}),
+        messages: (current?.messages || []).filter((message) => message.id !== optimisticMessage.id),
+      }));
+      setAgentChatInput(content);
       setError(err.message);
     } finally {
       setSendingAgentChat(false);
@@ -2289,6 +2323,8 @@ export default function App() {
     return (
       <div
         className={`panel chat-panel agent-chat-panel ${showAgentHighlight ? "agent-chat-panel-agent" : ""} ${
+          thread?.thread_type !== "general" ? "helper-chat-panel" : ""
+        } ${
           isDesktopRail ? "desktop-agent-panel" : ""
         } ${isMobileAgentView ? "mobile-agent-panel" : ""}`}
       >
