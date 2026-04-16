@@ -633,7 +633,6 @@ export default function App() {
   const agentChatInputRef = useRef(null);
   const helperInsightsScrollRef = useRef({ top: 0 });
   const suppressHelperInsightsAutoHideRef = useRef(false);
-  const helperInsightsUserScrolledRef = useRef(false);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 
   function resizeComposerTextarea(textarea) {
@@ -968,7 +967,6 @@ export default function App() {
     setShowHelperInsightsBar(true);
     helperInsightsScrollRef.current = { top: 0 };
     suppressHelperInsightsAutoHideRef.current = false;
-    helperInsightsUserScrolledRef.current = false;
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -2300,7 +2298,7 @@ export default function App() {
         return;
       }
       const nextTop = event.currentTarget.scrollTop;
-      if (suppressHelperInsightsAutoHideRef.current || !helperInsightsUserScrolledRef.current) {
+      if (suppressHelperInsightsAutoHideRef.current) {
         helperInsightsScrollRef.current = { top: nextTop };
         setShowHelperInsightsBar(true);
         return;
@@ -2443,15 +2441,6 @@ export default function App() {
           <div
             className={`chat-log ${isMobileAgentView ? "mobile-chat-log" : ""}`}
             ref={logRef}
-            onWheel={() => {
-              helperInsightsUserScrolledRef.current = true;
-            }}
-            onTouchStart={() => {
-              helperInsightsUserScrolledRef.current = true;
-            }}
-            onPointerDown={() => {
-              helperInsightsUserScrolledRef.current = true;
-            }}
             onScroll={handleChatLogScroll}
           >
             {messages.length ? (
