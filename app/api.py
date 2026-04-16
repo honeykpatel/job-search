@@ -219,6 +219,15 @@ def _generate_helper_insights(thread: dict[str, Any], messages: list[dict[str, A
         "match_percent": match_percent,
     }
 
+
+def _recent_helper_context_messages(messages: list[dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
+    recent_messages = [
+        message
+        for message in messages
+        if message.get("role") in {"user", "assistant"}
+    ]
+    return recent_messages[-limit:]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -926,7 +935,7 @@ def ensure_helper_insights(thread_id: int, current_user_id: str = Depends(requir
         "thread_id": thread["id"],
         **generate_helper_insights(
             thread_context=thread_context,
-            history_messages=build_langchain_messages(messages),
+            history_messages=build_langchain_messages(_recent_helper_context_messages(messages)),
             thread_job_id=thread.get("job_id"),
             thread_resume_id=thread.get("resume_id"),
             thread_user_id=current_user_id,
