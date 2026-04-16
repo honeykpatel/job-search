@@ -1481,7 +1481,7 @@ export default function App() {
       setError("");
       setNotice("");
       const resume = await api("/api/resumes", { method: "POST", body: formData, accessToken: session?.access_token });
-      setNotice(`Saved resume #${resume.id}.`);
+      setNotice(`Saved resume ${resume.filename || "successfully"}.`);
       setSelectedResumeId(resume.id);
       setMatchResumeId(String(resume.id));
       await refreshCollections();
@@ -3262,7 +3262,7 @@ export default function App() {
                               event.stopPropagation();
                               setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
                             }}
-                            aria-label={`Open options for search session ${session.id}`}
+                            aria-label={`Open options for saved search ${sessionTitle}`}
                           >
                             <AppIcon name="more" />
                           </button>
@@ -3338,7 +3338,7 @@ export default function App() {
                             event.stopPropagation();
                             setOpenSidebarItemMenu((current) => (current === `resume-${resume.id}` ? null : `resume-${resume.id}`));
                           }}
-                          aria-label={`Open options for resume ${resume.id}`}
+                          aria-label={`Open options for resume ${resume.filename}`}
                         >
                           <AppIcon name="more" />
                         </button>
@@ -3404,7 +3404,7 @@ export default function App() {
                         event.stopPropagation();
                         setOpenSidebarItemMenu((current) => (current === menuId ? null : menuId));
                       }}
-                      aria-label={`Open options for search session ${session.id}`}
+                      aria-label={`Open options for saved search ${sessionTitle}`}
                     >
                       <AppIcon name="more" />
                     </button>
@@ -3611,9 +3611,7 @@ export default function App() {
                   <select value={matchResumeId} onChange={(event) => setMatchResumeId(event.target.value)}>
                     <option value="">Latest saved resume</option>
                     {resumes.map((resume) => (
-                      <option key={resume.id} value={resume.id}>
-                        #{resume.id} | {resume.filename}
-                      </option>
+                      <option key={resume.id} value={resume.id}>{resume.filename}</option>
                     ))}
                   </select>
                 </label>
@@ -3631,7 +3629,7 @@ export default function App() {
               <button className="action-button primary" type="button" onClick={handleLoadMatches} disabled={loadingMatches}>
                 {loadingMatches ? "Ranking..." : "Find Matches"}
               </button>
-              {matchMeta ? <p className="muted">Using resume #{matchMeta.id} | {matchMeta.filename}</p> : null}
+              {matchMeta ? <p className="muted">Using resume {matchMeta.filename}</p> : null}
             </div>
 
             <div className="panel">
@@ -3776,9 +3774,7 @@ export default function App() {
                       >
                         <option value="">(none)</option>
                         {resumes.map((resume) => (
-                          <option key={resume.id} value={resume.id}>
-                            #{resume.id} | {resume.filename}
-                          </option>
+                          <option key={resume.id} value={resume.id}>{resume.filename}</option>
                         ))}
                       </select>
                     </label>
@@ -4360,9 +4356,7 @@ export default function App() {
                 >
                   <option value="">Select a resume</option>
                   {resumes.map((resume) => (
-                    <option key={resume.id} value={resume.id}>
-                      #{resume.id} | {resume.filename}
-                    </option>
+                    <option key={resume.id} value={resume.id}>{resume.filename}</option>
                   ))}
                 </select>
               </label>
@@ -4391,7 +4385,12 @@ export default function App() {
                 <h3>Search Jobs</h3>
                 <p className="muted">Run a saved search and attach the results to a new session.</p>
               </div>
-              <button className="icon-button" type="button" onClick={() => setShowSearchModal(false)}>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setShowSearchModal(false)}
+                aria-label="Close search jobs dialog"
+              >
                 <AppIcon name="close" />
               </button>
             </div>
@@ -4459,7 +4458,12 @@ export default function App() {
                 <h3>New Resume</h3>
                 <p className="muted">Upload a PDF or DOCX resume to save it for matching and helpers.</p>
               </div>
-              <button className="icon-button" type="button" onClick={() => setShowResumeUploadModal(false)}>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setShowResumeUploadModal(false)}
+                aria-label="Close new resume dialog"
+              >
                 <AppIcon name="close" />
               </button>
             </div>
