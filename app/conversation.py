@@ -115,7 +115,6 @@ def build_thread_context(
     if job:
         lines.extend(
             [
-                f"Job ID: {job.get('id')}",
                 f"Job title: {job.get('title') or 'Unknown'}",
                 f"Company: {job.get('company') or 'Unknown'}",
                 f"Location: {job.get('location') or 'Unknown'}",
@@ -129,7 +128,6 @@ def build_thread_context(
     if resume:
         lines.extend(
             [
-                f"Resume ID: {resume.get('id')}",
                 f"Resume filename: {resume.get('filename') or 'Unknown'}",
                 f"Resume text: {resume.get('text') or ''}",
             ]

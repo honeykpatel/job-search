@@ -856,41 +856,67 @@ def delete_session(session_id: int, user_id: str | None = None):
         )
         job_ids = [row[0] for row in result.fetchall()]
         deleted_thread_ids: list[int] = []
+        deleted_job_ids: list[str] = []
 
         if job_ids:
-            select_threads = text(
-                "SELECT id FROM chat_threads WHERE user_id = :user_id AND job_id IN :job_ids"
-            ).bindparams(bindparam("job_ids", expanding=True))
-            delete_threads = text(
-                "DELETE FROM chat_threads WHERE user_id = :user_id AND job_id IN :job_ids"
-            ).bindparams(bindparam("job_ids", expanding=True))
-            delete_applications = text(
-                "DELETE FROM applications WHERE user_id = :user_id AND job_id IN :job_ids"
-            ).bindparams(bindparam("job_ids", expanding=True))
             delete_session_jobs = text(
                 """
                 DELETE FROM session_jobs
-                WHERE job_id IN :job_ids AND session_id IN (
-                    SELECT id FROM search_sessions WHERE user_id = :user_id
-                )
+                WHERE job_id IN :job_ids AND session_id = :session_id
                 """
             ).bindparams(bindparam("job_ids", expanding=True))
-            delete_jobs = text(
-                "DELETE FROM job_postings WHERE user_id = :user_id AND id IN :job_ids"
-            ).bindparams(bindparam("job_ids", expanding=True))
+            conn.execute(
+                delete_session_jobs,
+                {"job_ids": job_ids, "session_id": int(session_id)},
+            )
 
-            deleted_thread_ids = [
-                int(row[0]) for row in conn.execute(select_threads, {"job_ids": job_ids, "user_id": resolved_user_id}).fetchall()
-            ]
-            conn.execute(delete_threads, {"job_ids": job_ids, "user_id": resolved_user_id})
-            conn.execute(delete_applications, {"job_ids": job_ids, "user_id": resolved_user_id})
-            conn.execute(delete_session_jobs, {"job_ids": job_ids, "user_id": resolved_user_id})
-            conn.execute(delete_jobs, {"job_ids": job_ids, "user_id": resolved_user_id})
+            remaining_job_rows = conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT sj.job_id
+                    FROM session_jobs sj
+                    JOIN search_sessions s ON s.id = sj.session_id
+                    WHERE s.user_id = :user_id AND sj.job_id IN :job_ids
+                    """
+                ).bindparams(bindparam("job_ids", expanding=True)),
+                {"job_ids": job_ids, "user_id": resolved_user_id},
+            ).fetchall()
+            remaining_job_ids = {row[0] for row in remaining_job_rows}
+            deleted_job_ids = [job_id for job_id in job_ids if job_id not in remaining_job_ids]
+
+            if deleted_job_ids:
+                select_threads = text(
+                    "SELECT id FROM chat_threads WHERE user_id = :user_id AND job_id IN :job_ids"
+                ).bindparams(bindparam("job_ids", expanding=True))
+                delete_threads = text(
+                    "DELETE FROM chat_threads WHERE user_id = :user_id AND job_id IN :job_ids"
+                ).bindparams(bindparam("job_ids", expanding=True))
+                delete_applications = text(
+                    "DELETE FROM applications WHERE user_id = :user_id AND job_id IN :job_ids"
+                ).bindparams(bindparam("job_ids", expanding=True))
+                delete_jobs = text(
+                    "DELETE FROM job_postings WHERE user_id = :user_id AND id IN :job_ids"
+                ).bindparams(bindparam("job_ids", expanding=True))
+
+                deleted_thread_ids = [
+                    int(row[0])
+                    for row in conn.execute(
+                        select_threads,
+                        {"job_ids": deleted_job_ids, "user_id": resolved_user_id},
+                    ).fetchall()
+                ]
+                conn.execute(delete_threads, {"job_ids": deleted_job_ids, "user_id": resolved_user_id})
+                conn.execute(delete_applications, {"job_ids": deleted_job_ids, "user_id": resolved_user_id})
+                conn.execute(delete_jobs, {"job_ids": deleted_job_ids, "user_id": resolved_user_id})
 
         conn.execute(
             text("DELETE FROM search_sessions WHERE id = :session_id AND user_id = :user_id"),
             {"session_id": int(session_id), "user_id": resolved_user_id},
         )
+        return {
+            "deleted_job_ids": deleted_job_ids,
+            "deleted_thread_ids": deleted_thread_ids,
+        }
 
 
 def update_session_title(session_id: int, job_title: str, user_id: str | None = None):
@@ -910,10 +936,7 @@ def update_session_title(session_id: int, job_title: str, user_id: str | None = 
                 "user_id": resolved_user_id,
             },
         )
-        return {
-            "deleted_job_ids": job_ids,
-            "deleted_thread_ids": deleted_thread_ids,
-        }
+        return None
 
 
 def save_jobs_for_session(session_id: int, jobs: list[dict], user_id: str | None = None):
@@ -1123,8 +1146,18 @@ def delete_resume(resume_id: int, user_id: str | None = None):
             {"resume_id": int(resume_id), "user_id": resolved_user_id},
         )
         conn.execute(
-            text("UPDATE chat_threads SET resume_id = NULL WHERE resume_id = :resume_id AND user_id = :user_id"),
-            {"resume_id": int(resume_id), "user_id": resolved_user_id},
+            text(
+                """
+                UPDATE chat_threads
+                SET resume_id = NULL,
+                    helper_insights_json = NULL,
+                    helper_insights_status = 'idle',
+                    helper_insights_error = NULL,
+                    updated_at = :updated_at
+                WHERE resume_id = :resume_id AND user_id = :user_id
+                """
+            ),
+            {"resume_id": int(resume_id), "user_id": resolved_user_id, "updated_at": _utcnow()},
         )
         conn.execute(
             text("DELETE FROM resumes WHERE id = :resume_id AND user_id = :user_id"),
@@ -1314,6 +1347,45 @@ def create_chat_thread(
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
     with ENGINE.begin() as conn:
+        if thread_type == "general":
+            existing_general = conn.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM chat_threads
+                    WHERE thread_type = 'general' AND user_id = :user_id
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": resolved_user_id},
+            ).fetchone()
+            if existing_general:
+                return int(existing_general[0])
+
+        if thread_type == "job" and job_id and resume_id is not None:
+            existing_helper = conn.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM chat_threads
+                    WHERE thread_type = 'job'
+                      AND user_id = :user_id
+                      AND job_id = :job_id
+                      AND resume_id = :resume_id
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "user_id": resolved_user_id,
+                    "job_id": job_id,
+                    "resume_id": int(resume_id),
+                },
+            ).fetchone()
+            if existing_helper:
+                return int(existing_helper[0])
+
         result = conn.execute(
             text(
                 """
