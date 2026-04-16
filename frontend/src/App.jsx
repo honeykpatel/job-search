@@ -2308,13 +2308,12 @@ export default function App() {
       const { top: previousTop } = helperInsightsScrollRef.current;
       const overflowHeight = event.currentTarget.scrollHeight - event.currentTarget.clientHeight;
       const hasEnoughChat = overflowHeight > 120;
-      const scrollDelta = nextTop - previousTop;
 
       if (!hasEnoughChat || nextTop < 12) {
         setShowHelperInsightsBar(true);
-      } else if (scrollDelta > 8) {
+      } else if (nextTop > previousTop) {
         setShowHelperInsightsBar(false);
-      } else if (scrollDelta < -3) {
+      } else if (nextTop < previousTop) {
         setShowHelperInsightsBar(true);
       }
 
