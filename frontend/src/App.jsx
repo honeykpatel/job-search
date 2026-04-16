@@ -738,6 +738,7 @@ export default function App() {
   const [selectedThread, setSelectedThread] = useState(null);
   const [agentThread, setAgentThread] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
+  const [pendingActionThreadId, setPendingActionThreadId] = useState(null);
   const [timelineEventsByThread, setTimelineEventsByThread] = useState({});
   const [showToolDebug, setShowToolDebug] = useState(false);
   const [newThreadForm, setNewThreadForm] = useState({ job_id: "", resume_id: "" });
@@ -1698,6 +1699,7 @@ export default function App() {
       });
       setSelectedThread((current) => ({ ...(current || {}), messages: response.messages }));
       setPendingAction(response.pending_action || null);
+      setPendingActionThreadId(response.pending_action ? selectedThreadId : null);
       await refreshCollections();
     } catch (err) {
       setSelectedThread((current) => ({
@@ -1716,6 +1718,20 @@ export default function App() {
     const content = agentChatInput.trim();
     if (!mainAgentThread?.id || !content) {
       return;
+    }
+
+    if (pendingAction?.preview?.action && pendingActionThreadId === mainAgentThread.id) {
+      const decision = classifyPendingActionReply(content);
+      if (decision === "approve") {
+        setAgentChatInput("");
+        await handleApprovePendingAction();
+        return;
+      }
+      if (decision === "reject") {
+        setAgentChatInput("");
+        handleRejectPendingAction();
+        return;
+      }
     }
 
     const optimisticMessage = {
@@ -1742,6 +1758,8 @@ export default function App() {
         accessToken: session?.access_token,
       });
       setAgentThread((current) => ({ ...(current || {}), messages: response.messages }));
+      setPendingAction(response.pending_action || null);
+      setPendingActionThreadId(response.pending_action ? mainAgentThread.id : null);
       await refreshCollections();
     } catch (err) {
       setAgentThread((current) => ({
@@ -1764,6 +1782,7 @@ export default function App() {
       setError("");
       await api(`/api/threads/${selectedThreadId}/clear`, { method: "POST", accessToken: session?.access_token });
       setPendingAction(null);
+      setPendingActionThreadId(null);
       setTimelineEventsByThread((current) => ({ ...current, [selectedThreadId]: [] }));
       await loadThread(selectedThreadId);
       await refreshCollections();
@@ -1776,8 +1795,9 @@ export default function App() {
     try {
       setError("");
       await api(`/api/threads/${threadId}`, { method: "DELETE", accessToken: session?.access_token });
-      if (selectedThreadId === threadId) {
+      if (selectedThreadId === threadId || pendingActionThreadId === threadId) {
         setPendingAction(null);
+        setPendingActionThreadId(null);
       }
       await refreshCollections();
       if (selectedThreadId === threadId) {
@@ -2059,17 +2079,19 @@ export default function App() {
   }
 
   async function handleApprovePendingAction() {
-    if (!selectedThreadId || !pendingAction?.preview?.action) {
+    if (!pendingActionThreadId || !pendingAction?.preview?.action) {
       return;
     }
 
     try {
       setError("");
       const action = pendingAction.preview.action;
-      const lastVisibleMessageId = [...(selectedThread?.messages || [])]
+      const sourceThread =
+        pendingActionThreadId === mainAgentThread?.id ? agentThread : pendingActionThreadId === selectedThreadId ? selectedThread : null;
+      const lastVisibleMessageId = [...(sourceThread?.messages || [])]
         .filter((message) => showToolDebug || message.role !== "tool")
         .at(-1)?.id;
-      await api(`/api/threads/${selectedThreadId}/actions/approve`, {
+      const response = await api(`/api/threads/${pendingActionThreadId}/actions/approve`, {
         method: "POST",
         body: JSON.stringify({
           action_type: action.type,
@@ -2079,10 +2101,20 @@ export default function App() {
       });
       const eventText = approvalEventLabel(action.type, true);
       setPendingAction(null);
+      setPendingActionThreadId(null);
       setNotice("Approved action completed.");
       await refreshCollections();
-      await loadThread(selectedThreadId);
-      appendTimelineEvent(selectedThreadId, eventText, lastVisibleMessageId);
+      if (pendingActionThreadId === mainAgentThread?.id) {
+        await loadAgentThread(mainAgentThread.id);
+      } else {
+        await loadThread(pendingActionThreadId);
+      }
+      appendTimelineEvent(pendingActionThreadId, eventText, lastVisibleMessageId);
+      if (action.type === "create_helper" && response?.result?.id) {
+        setSelectedThreadId(response.result.id);
+        setPage(showDesktopAgentRail ? "Helpers" : "Agent");
+        await loadThread(response.result.id);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -2090,13 +2122,16 @@ export default function App() {
 
   function handleRejectPendingAction() {
     const actionType = pendingAction?.preview?.action?.type;
-    const lastVisibleMessageId = [...(selectedThread?.messages || [])]
+    const sourceThread =
+      pendingActionThreadId === mainAgentThread?.id ? agentThread : pendingActionThreadId === selectedThreadId ? selectedThread : null;
+    const lastVisibleMessageId = [...(sourceThread?.messages || [])]
       .filter((message) => showToolDebug || message.role !== "tool")
       .at(-1)?.id;
     setPendingAction(null);
+    setPendingActionThreadId(null);
     setNotice("Action cancelled.");
-    if (selectedThreadId && actionType) {
-      appendTimelineEvent(selectedThreadId, approvalEventLabel(actionType, false), lastVisibleMessageId);
+    if (pendingActionThreadId && actionType) {
+      appendTimelineEvent(pendingActionThreadId, approvalEventLabel(actionType, false), lastVisibleMessageId);
     }
   }
 
@@ -2633,7 +2668,7 @@ export default function App() {
             "Update this application plan",
           ];
     const marqueePrompts = [...quickPrompts, ...quickPrompts];
-    const showPendingAction = pendingAction && threadId === selectedThreadId;
+    const showPendingAction = pendingAction && threadId === pendingActionThreadId;
 
     function handleChatLogScroll(event) {
       if (!showDesktopHelperHeader) {
