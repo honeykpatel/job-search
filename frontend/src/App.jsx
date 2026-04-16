@@ -2169,6 +2169,15 @@ export default function App() {
 
     const preview = pendingAction.preview;
     const actionLabel = pendingAction.tool_name || preview.action?.type || "pending action";
+    const compactSummary = [
+      preview.title ? `Title: ${preview.title}` : null,
+      preview.job ? `${preview.job.title || "Untitled"} @ ${preview.job.company || "Unknown company"}` : null,
+      preview.resume?.filename ? `Resume: ${preview.resume.filename}` : null,
+      preview.new_title ? `Rename to: ${preview.new_title}` : null,
+      preview.proposed_application?.status ? `Status: ${preview.proposed_application.status}` : null,
+    ]
+      .filter(Boolean)
+      .slice(0, 2);
 
     return (
       <div className="approval-card">
@@ -2181,59 +2190,68 @@ export default function App() {
           <span className="status-pill">Not applied yet</span>
         </div>
 
-        {preview.job ? (
-          <div className="approval-section">
-            <strong>Job</strong>
-            <p>
-              {preview.job.title || "Untitled"} @ {preview.job.company || "Unknown company"}
-              {preview.job.location ? ` (${preview.job.location})` : ""}
-            </p>
+        {compactSummary.length ? (
+          <div className="approval-summary-row">
+            {compactSummary.map((item) => (
+              <span key={item} className="approval-summary-chip">
+                {item}
+              </span>
+            ))}
           </div>
         ) : null}
 
-        {preview.resume ? (
-          <div className="approval-section">
-            <strong>Resume</strong>
-            <p>
-              #{preview.resume.id} | {preview.resume.filename}
-            </p>
-          </div>
-        ) : null}
+        <details className="approval-details">
+          <summary>Review details</summary>
+          <div className="approval-details-body">
+            {preview.job ? (
+              <div className="approval-section">
+                <strong>Job</strong>
+                <p>
+                  {preview.job.title || "Untitled"} @ {preview.job.company || "Unknown company"}
+                  {preview.job.location ? ` (${preview.job.location})` : ""}
+                </p>
+              </div>
+            ) : null}
 
-        {preview.proposed_application ? (
-          <div className="approval-section">
-            <strong>Proposed application update</strong>
-            <p>Status: {preview.proposed_application.status || "saved"}</p>
-            <p>
-              Resume: {preview.proposed_application.resume_filename || "(none)"}
-            </p>
-            {preview.proposed_application.notes ? (
-              <p>Notes: {preview.proposed_application.notes}</p>
+            {preview.resume ? (
+              <div className="approval-section">
+                <strong>Resume</strong>
+                <p>{preview.resume.filename}</p>
+              </div>
+            ) : null}
+
+            {preview.proposed_application ? (
+              <div className="approval-section">
+                <strong>Proposed application update</strong>
+                <p>Status: {preview.proposed_application.status || "saved"}</p>
+                <p>Resume: {preview.proposed_application.resume_filename || "(none)"}</p>
+                {preview.proposed_application.notes ? <p>Notes: {preview.proposed_application.notes}</p> : null}
+              </div>
+            ) : null}
+
+            {preview.current_title || preview.new_title ? (
+              <div className="approval-section">
+                <strong>Rename Helper</strong>
+                <p>Current: {preview.current_title || "Untitled Helper"}</p>
+                <p>New: {preview.new_title || "Untitled Helper"}</p>
+              </div>
+            ) : null}
+
+            {preview.title && preview.thread_type === "job" ? (
+              <div className="approval-section">
+                <strong>New Helper</strong>
+                <p>Title: {preview.title}</p>
+              </div>
+            ) : null}
+
+            {preview.helper_id && !preview.current_title && !preview.new_title ? (
+              <div className="approval-section">
+                <strong>Delete Helper</strong>
+                <p>{preview.title || "Selected Helper"}</p>
+              </div>
             ) : null}
           </div>
-        ) : null}
-
-        {preview.current_title || preview.new_title ? (
-          <div className="approval-section">
-            <strong>Rename Helper</strong>
-            <p>Current: {preview.current_title || "Untitled Helper"}</p>
-            <p>New: {preview.new_title || "Untitled Helper"}</p>
-          </div>
-        ) : null}
-
-        {preview.title && preview.thread_type === "job" ? (
-          <div className="approval-section">
-            <strong>New Helper</strong>
-            <p>Title: {preview.title}</p>
-          </div>
-        ) : null}
-
-        {preview.helper_id && !preview.current_title && !preview.new_title ? (
-          <div className="approval-section">
-            <strong>Delete Helper</strong>
-            <p>{preview.title || `Helper #${preview.helper_id}`}</p>
-          </div>
-        ) : null}
+        </details>
 
         <div className="approval-actions">
           <button className="action-button primary" type="button" onClick={() => void handleApprovePendingAction()}>
