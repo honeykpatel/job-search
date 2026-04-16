@@ -626,6 +626,7 @@ export default function App() {
   const [sendingAgentChat, setSendingAgentChat] = useState(false);
   const [activeHelperInsight, setActiveHelperInsight] = useState(null);
   const [showHelperInsightsBar, setShowHelperInsightsBar] = useState(true);
+  const [helperInsightsByThreadId, setHelperInsightsByThreadId] = useState({});
   const chatLogRef = useRef(null);
   const agentChatLogRef = useRef(null);
   const chatInputRef = useRef(null);
@@ -991,6 +992,9 @@ export default function App() {
       .then((data) => {
         if (cancelled) {
           return;
+        }
+        if (data?.insights) {
+          setHelperInsightsByThreadId((current) => ({ ...current, [selectedThreadId]: data.insights }));
         }
         setSelectedThread((current) => (current ? { ...current, messages: data.messages || current.messages } : current));
       })
@@ -1947,7 +1951,9 @@ export default function App() {
   const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
   const selectedHelperInsights =
     selectedThread?.thread_type && selectedThread.thread_type !== "general"
-      ? (selectedThread?.messages || []).map(parseHelperInsightsMessage).find(Boolean) || null
+      ? helperInsightsByThreadId[selectedThread.id] ||
+        (selectedThread?.messages || []).map(parseHelperInsightsMessage).find(Boolean) ||
+        null
       : null;
 
   function renderDesktopHelperInsights() {
