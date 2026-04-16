@@ -42,6 +42,7 @@ from storage.db import (
     delete_chat_thread,
     delete_resume,
     delete_session,
+    clear_all_app_data,
     get_chat_messages,
     get_chat_thread,
     get_job,
@@ -68,6 +69,7 @@ from storage.db import (
     update_resume_filename,
     update_session_title,
     upsert_application,
+    username_exists,
 )
 from utils.company_inference import ensure_job_company
 from utils.dedupe import dedupe_jobs
@@ -135,6 +137,11 @@ HELPER_SKILL_KEYWORDS = [
     "product thinking",
     "problem solving",
 ]
+
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
+PHONE_DIGITS_PATTERN = re.compile(r"^\d{10}$")
+ALLOWED_GENDERS = {"", "female", "male", "non-binary", "prefer not to say", "other"}
 
 
 def _plain_text(value: Any) -> str:
@@ -265,8 +272,12 @@ class ProfileUpdateRequest(BaseModel):
 
 
 class AccountUpdateRequest(BaseModel):
-    full_name: str = ""
-    phone: str = ""
+    first_name: str
+    last_name: str
+    username: str
+    phone: str
+    age: int | None = None
+    gender: str = ""
 
 
 class CreateThreadRequest(BaseModel):
@@ -320,6 +331,47 @@ def _parse_tool_payload(content: Any) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     return None
+
+
+def _normalize_username(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_phone_digits(value: str) -> str:
+    return "".join(character for character in str(value or "") if character.isdigit())
+
+
+def _validate_account_payload(payload: AccountUpdateRequest, *, current_user_id: str | None = None) -> dict[str, Any]:
+    first_name = str(payload.first_name or "").strip()
+    last_name = str(payload.last_name or "").strip()
+    username = _normalize_username(payload.username)
+    phone_digits = _normalize_phone_digits(payload.phone)
+    gender = str(payload.gender or "").strip()
+    age = payload.age
+
+    if not first_name:
+        raise HTTPException(status_code=400, detail="First name is required.")
+    if not last_name:
+        raise HTTPException(status_code=400, detail="Last name is required.")
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(status_code=400, detail="Username must be 3-24 characters and use only letters, numbers, or underscores.")
+    if username_exists(username, exclude_user_id=current_user_id):
+        raise HTTPException(status_code=409, detail="That username is already taken.")
+    if not PHONE_DIGITS_PATTERN.fullmatch(phone_digits):
+        raise HTTPException(status_code=400, detail="Phone number must contain exactly 10 digits including area code.")
+    if age is not None and (age < 13 or age > 120):
+        raise HTTPException(status_code=400, detail="Age must be between 13 and 120.")
+    if gender.lower() not in ALLOWED_GENDERS:
+        raise HTTPException(status_code=400, detail="Select a valid gender option.")
+
+    return {
+        "first_name": first_name,
+        "last_name": last_name,
+        "username": username,
+        "phone": phone_digits,
+        "age": age,
+        "gender": gender,
+    }
 
 
 def _execute_approved_action(
@@ -719,10 +771,23 @@ def get_profile(current_user_id: str = Depends(require_user_id)) -> dict[str, An
 def get_account(current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
     profile = get_user_profile(user_id=current_user_id) or {}
     return {
+        "first_name": str(profile.get("first_name") or ""),
+        "last_name": str(profile.get("last_name") or ""),
+        "username": str(profile.get("username") or ""),
         "full_name": str(profile.get("full_name") or ""),
         "phone": str(profile.get("phone") or ""),
+        "age": profile.get("age"),
+        "gender": str(profile.get("gender") or ""),
         "summary_text": str(profile.get("summary_text") or ""),
     }
+
+
+@app.get("/api/account/username-available")
+def get_username_availability(username: str = Query(default="", min_length=1, max_length=24)) -> dict[str, Any]:
+    normalized_username = _normalize_username(username)
+    if not USERNAME_PATTERN.fullmatch(normalized_username):
+        return {"available": False, "reason": "Username must be 3-24 characters and use only letters, numbers, or underscores."}
+    return {"available": not username_exists(normalized_username)}
 
 
 @app.get("/api/pipeline-summary")
@@ -737,10 +802,16 @@ def update_profile(payload: ProfileUpdateRequest, current_user_id: str = Depends
 
 @app.put("/api/account")
 def update_account(payload: AccountUpdateRequest, current_user_id: str = Depends(require_user_id)) -> dict[str, Any]:
-    profile = save_user_account_profile(payload.full_name, payload.phone, user_id=current_user_id)
+    normalized = _validate_account_payload(payload, current_user_id=current_user_id)
+    profile = save_user_account_profile(user_id=current_user_id, **normalized)
     return {
+        "first_name": str(profile.get("first_name") or ""),
+        "last_name": str(profile.get("last_name") or ""),
+        "username": str(profile.get("username") or ""),
         "full_name": str(profile.get("full_name") or ""),
         "phone": str(profile.get("phone") or ""),
+        "age": profile.get("age"),
+        "gender": str(profile.get("gender") or ""),
         "summary_text": str(profile.get("summary_text") or ""),
         "updated_at": profile.get("updated_at"),
     }

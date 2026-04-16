@@ -72,6 +72,76 @@ function AuthShell({
               required
             />
           </label>
+          {mode === "sign-up" ? (
+            <>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>First Name</span>
+                  <input
+                    type="text"
+                    value={form.first_name}
+                    onChange={(event) => onChange({ ...form, first_name: event.target.value })}
+                    autoComplete="given-name"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Last Name</span>
+                  <input
+                    type="text"
+                    value={form.last_name}
+                    onChange={(event) => onChange({ ...form, last_name: event.target.value })}
+                    autoComplete="family-name"
+                    required
+                  />
+                </label>
+              </div>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>Username</span>
+                  <input
+                    type="text"
+                    value={form.username}
+                    onChange={(event) => onChange({ ...form, username: event.target.value })}
+                    autoComplete="username"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Phone Number</span>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={(event) => onChange({ ...form, phone: event.target.value })}
+                    autoComplete="tel"
+                    required
+                  />
+                </label>
+              </div>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>Age</span>
+                  <input
+                    type="number"
+                    min="13"
+                    max="120"
+                    value={form.age}
+                    onChange={(event) => onChange({ ...form, age: event.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  <span>Gender</span>
+                  <select value={form.gender} onChange={(event) => onChange({ ...form, gender: event.target.value })}>
+                    <option value="">Prefer not to say</option>
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                    <option value="Non-binary">Non-binary</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+              </div>
+            </>
+          ) : null}
           <label className="field">
             <span>Password</span>
             <input
@@ -82,6 +152,18 @@ function AuthShell({
               required
             />
           </label>
+          {mode === "sign-up" ? (
+            <label className="field">
+              <span>Confirm Password</span>
+              <input
+                type="password"
+                value={form.confirmPassword}
+                onChange={(event) => onChange({ ...form, confirmPassword: event.target.value })}
+                autoComplete="new-password"
+                required
+              />
+            </label>
+          ) : null}
           <button className="action-button primary" type="submit" disabled={loading}>
             {loading ? "Please wait..." : mode === "sign-in" ? "Sign In" : "Create Account"}
           </button>
@@ -195,11 +277,44 @@ function emptyProfileForm() {
 
 function emptyAccountForm() {
   return {
-    full_name: "",
+    first_name: "",
+    last_name: "",
+    username: "",
     phone: "",
+    age: "",
+    gender: "",
+  };
+}
+
+function emptyAuthForm() {
+  return {
+    email: "",
     password: "",
     confirmPassword: "",
+    first_name: "",
+    last_name: "",
+    username: "",
+    phone: "",
+    age: "",
+    gender: "",
   };
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || "").trim());
+}
+
+function isStrongPassword(value) {
+  const password = String(value || "");
+  return password.length >= 6 && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+}
+
+function isValidUsername(value) {
+  return /^[a-zA-Z0-9_]{3,24}$/.test(String(value || "").trim());
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
 }
 
 function parseProfileSummary(summaryText) {
@@ -542,7 +657,7 @@ function parseHelperInsightsMessage(message) {
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname || "/");
   const [authMode, setAuthMode] = useState("sign-in");
-  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authForm, setAuthForm] = useState(emptyAuthForm());
   const [adminAuthForm, setAdminAuthForm] = useState({ username: "", password: "" });
   const [authLoading, setAuthLoading] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
@@ -1075,6 +1190,7 @@ export default function App() {
         api("/api/pipeline-summary", { accessToken }),
         api("/api/account", { accessToken }),
       ]);
+      accountData = await ensureAccountProfile(accessToken, accountData);
       if (!threadData.some((thread) => thread.thread_type === "general")) {
         const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
         threadData = [deepAgentThread, ...threadData];
@@ -1086,10 +1202,12 @@ export default function App() {
       setProfile(profileData || { summary_text: "" });
       setProfileForm(parseProfileSummary((profileData || {}).summary_text || ""));
       setAccountForm({
-        full_name: accountData?.full_name || session.user?.user_metadata?.full_name || "",
+        first_name: accountData?.first_name || session.user?.user_metadata?.first_name || "",
+        last_name: accountData?.last_name || session.user?.user_metadata?.last_name || "",
+        username: accountData?.username || session.user?.user_metadata?.username || "",
         phone: accountData?.phone || session.user?.user_metadata?.phone || "",
-        password: "",
-        confirmPassword: "",
+        age: accountData?.age ? String(accountData.age) : session.user?.user_metadata?.age ? String(session.user.user_metadata.age) : "",
+        gender: accountData?.gender || session.user?.user_metadata?.gender || "",
       });
       setPipelineSummary(pipelineData);
       if (resumeData[0]) {
@@ -1115,6 +1233,7 @@ export default function App() {
       api("/api/profile", { accessToken }),
       api("/api/account", { accessToken }),
     ]);
+    accountData = await ensureAccountProfile(accessToken, accountData);
     if (!threadData.some((thread) => thread.thread_type === "general")) {
       const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
       threadData = [deepAgentThread, ...threadData];
@@ -1132,10 +1251,12 @@ export default function App() {
     setProfileForm(parseProfileSummary((profileData || {}).summary_text || ""));
     setAccountForm((current) => ({
       ...current,
-      full_name: accountData?.full_name || "",
-      phone: accountData?.phone || "",
-      password: "",
-      confirmPassword: "",
+      first_name: accountData?.first_name || session?.user?.user_metadata?.first_name || "",
+      last_name: accountData?.last_name || session?.user?.user_metadata?.last_name || "",
+      username: accountData?.username || session?.user?.user_metadata?.username || "",
+      phone: accountData?.phone || session?.user?.user_metadata?.phone || "",
+      age: accountData?.age ? String(accountData.age) : session?.user?.user_metadata?.age ? String(session.user.user_metadata.age) : "",
+      gender: accountData?.gender || session?.user?.user_metadata?.gender || "",
     }));
     setSelectedSessionId(nextSelectedSessionId);
     setSelectedThreadId((current) =>
@@ -1156,6 +1277,37 @@ export default function App() {
 
   async function fetchThread(threadId) {
     return api(`/api/threads/${threadId}`, { accessToken: session?.access_token });
+  }
+
+  async function ensureAccountProfile(accessToken, accountData) {
+    const metadata = session?.user?.user_metadata || {};
+    if (
+      !accessToken ||
+      accountData?.username ||
+      !metadata.first_name ||
+      !metadata.last_name ||
+      !metadata.username ||
+      !metadata.phone
+    ) {
+      return accountData;
+    }
+
+    try {
+      return await api("/api/account", {
+        method: "PUT",
+        body: JSON.stringify({
+          first_name: metadata.first_name,
+          last_name: metadata.last_name,
+          username: metadata.username,
+          phone: metadata.phone,
+          age: metadata.age || null,
+          gender: metadata.gender || "",
+        }),
+        accessToken,
+      });
+    } catch {
+      return accountData;
+    }
   }
 
   async function loadThread(threadId) {
@@ -1351,8 +1503,20 @@ export default function App() {
     if (!session?.access_token || !supabaseClient) {
       return;
     }
-    if (accountForm.password && accountForm.password !== accountForm.confirmPassword) {
-      setError("Password confirmation does not match.");
+    if (!accountForm.first_name.trim() || !accountForm.last_name.trim()) {
+      setError("First name and last name are required.");
+      return;
+    }
+    if (!isValidUsername(accountForm.username)) {
+      setError("Username must be 3-24 characters and use only letters, numbers, or underscores.");
+      return;
+    }
+    if (!/^\d{10}$/.test(normalizePhoneDigits(accountForm.phone))) {
+      setError("Phone number must contain exactly 10 digits including area code.");
+      return;
+    }
+    if (accountForm.age && (Number(accountForm.age) < 13 || Number(accountForm.age) > 120)) {
+      setError("Age must be between 13 and 120.");
       return;
     }
 
@@ -1362,38 +1526,62 @@ export default function App() {
       const savedAccount = await api("/api/account", {
         method: "PUT",
         body: JSON.stringify({
-          full_name: accountForm.full_name,
-          phone: accountForm.phone,
+          first_name: accountForm.first_name,
+          last_name: accountForm.last_name,
+          username: accountForm.username,
+          phone: normalizePhoneDigits(accountForm.phone),
+          age: accountForm.age ? Number(accountForm.age) : null,
+          gender: accountForm.gender,
         }),
         accessToken: session.access_token,
       });
 
-      const updatePayload = {
+      const { error: updateError } = await supabaseClient.auth.updateUser({
         data: {
-          full_name: accountForm.full_name,
-          phone: accountForm.phone,
+          first_name: savedAccount.first_name,
+          last_name: savedAccount.last_name,
+          full_name: savedAccount.full_name,
+          username: savedAccount.username,
+          phone: savedAccount.phone,
+          age: savedAccount.age,
+          gender: savedAccount.gender,
         },
-      };
-      if (accountForm.password) {
-        updatePayload.password = accountForm.password;
-      }
-
-      const { error: updateError } = await supabaseClient.auth.updateUser(updatePayload);
+      });
       if (updateError) {
         throw updateError;
       }
 
       setAccountForm({
-        full_name: savedAccount.full_name || "",
+        first_name: savedAccount.first_name || "",
+        last_name: savedAccount.last_name || "",
+        username: savedAccount.username || "",
         phone: savedAccount.phone || "",
-        password: "",
-        confirmPassword: "",
+        age: savedAccount.age ? String(savedAccount.age) : "",
+        gender: savedAccount.gender || "",
       });
       setNotice("Account settings updated.");
     } catch (err) {
       setError(err.message);
     } finally {
       setSavingAccount(false);
+    }
+  }
+
+  async function handleSendPasswordReset() {
+    if (!supabaseClient || !session?.user?.email) {
+      return;
+    }
+    try {
+      setError("");
+      const { error: resetError } = await supabaseClient.auth.resetPasswordForEmail(session.user.email, {
+        redirectTo: window.location.origin,
+      });
+      if (resetError) {
+        throw resetError;
+      }
+      setNotice("Password reset link sent to your email.");
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -2643,25 +2831,67 @@ export default function App() {
       setError("");
       setNotice("");
       if (authMode === "sign-in") {
-        const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+        if (!isValidEmail(authForm.email)) {
+          throw new Error("Enter a valid email address.");
+        }
+        const { data, error: signInError } = await supabaseClient.auth.signInWithPassword({
           email: authForm.email.trim(),
           password: authForm.password,
         });
         if (signInError) {
           throw signInError;
         }
+        if (data?.user && !data.user.email_confirmed_at) {
+          await supabaseClient.auth.signOut();
+          throw new Error("Verify your email before signing in.");
+        }
       } else {
+        if (!isValidEmail(authForm.email)) {
+          throw new Error("Enter a valid email address.");
+        }
+        if (!authForm.first_name.trim() || !authForm.last_name.trim()) {
+          throw new Error("First name and last name are required.");
+        }
+        if (!isValidUsername(authForm.username)) {
+          throw new Error("Username must be 3-24 characters and use only letters, numbers, or underscores.");
+        }
+        if (!isStrongPassword(authForm.password)) {
+          throw new Error("Password must be at least 6 characters and include a number and a symbol.");
+        }
+        if (authForm.password !== authForm.confirmPassword) {
+          throw new Error("Password confirmation does not match.");
+        }
+        if (!/^\d{10}$/.test(normalizePhoneDigits(authForm.phone))) {
+          throw new Error("Phone number must contain exactly 10 digits including area code.");
+        }
+        const usernameAvailability = await api(
+          `/api/account/username-available?username=${encodeURIComponent(authForm.username.trim())}`
+        );
+        if (!usernameAvailability.available) {
+          throw new Error(usernameAvailability.reason || "That username is already taken.");
+        }
         const { error: signUpError } = await supabaseClient.auth.signUp({
           email: authForm.email.trim(),
           password: authForm.password,
+          options: {
+            data: {
+              first_name: authForm.first_name.trim(),
+              last_name: authForm.last_name.trim(),
+              full_name: `${authForm.first_name.trim()} ${authForm.last_name.trim()}`.trim(),
+              username: authForm.username.trim().toLowerCase(),
+              phone: normalizePhoneDigits(authForm.phone),
+              age: authForm.age ? Number(authForm.age) : null,
+              gender: authForm.gender || "",
+            },
+          },
         });
         if (signUpError) {
           throw signUpError;
         }
-        setNotice("Account created. You can now sign in.");
+        setNotice("Account created. Check your email and verify it before signing in.");
         setAuthMode("sign-in");
       }
-      setAuthForm({ email: authForm.email.trim(), password: "" });
+      setAuthForm({ ...emptyAuthForm(), email: authForm.email.trim() });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -2764,7 +2994,8 @@ export default function App() {
     ? [...visiblePages, ...(adminSession?.token ? ["Admin"] : [])]
     : ["Admin"];
   const currentUserFullName =
-    String(accountForm.full_name || "").trim() || String(session?.user?.user_metadata?.full_name || "").trim();
+    `${String(accountForm.first_name || "").trim()} ${String(accountForm.last_name || "").trim()}`.trim() ||
+    String(session?.user?.user_metadata?.full_name || "").trim();
   const currentUserLabel =
     currentUserFullName ||
     session?.user?.email ||
@@ -3510,15 +3741,43 @@ export default function App() {
             <div className="panel span-two">
               <div className="section-heading">
                 <h3>Account Settings</h3>
-                <p>Users can change their name, phone number, and password from this screen.</p>
+                <p>Keep your registration details accurate here. Required fields stay enforced in-app.</p>
               </div>
               <div className="inline-fields">
                 <label className="field">
-                  <span>Full name</span>
+                  <span>Email</span>
+                  <input value={session?.user?.email || ""} readOnly />
+                </label>
+                <label className="field">
+                  <span>Email Verification</span>
+                  <input value={session?.user?.email_confirmed_at ? "Verified" : "Pending verification"} readOnly />
+                </label>
+              </div>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>First name</span>
                   <input
-                    value={accountForm.full_name}
-                    onChange={(event) => setAccountForm({ ...accountForm, full_name: event.target.value })}
-                    placeholder="Your name"
+                    value={accountForm.first_name}
+                    onChange={(event) => setAccountForm({ ...accountForm, first_name: event.target.value })}
+                    placeholder="First name"
+                  />
+                </label>
+                <label className="field">
+                  <span>Last name</span>
+                  <input
+                    value={accountForm.last_name}
+                    onChange={(event) => setAccountForm({ ...accountForm, last_name: event.target.value })}
+                    placeholder="Last name"
+                  />
+                </label>
+              </div>
+              <div className="inline-fields">
+                <label className="field">
+                  <span>Username</span>
+                  <input
+                    value={accountForm.username}
+                    onChange={(event) => setAccountForm({ ...accountForm, username: event.target.value })}
+                    placeholder="Unique username"
                   />
                 </label>
                 <label className="field">
@@ -3526,32 +3785,49 @@ export default function App() {
                   <input
                     value={accountForm.phone}
                     onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value })}
-                    placeholder="+1 555 123 4567"
+                    placeholder="5551234567"
                   />
                 </label>
               </div>
               <div className="inline-fields">
                 <label className="field">
-                  <span>New password</span>
+                  <span>Age</span>
                   <input
-                    type="password"
-                    value={accountForm.password}
-                    onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })}
-                    placeholder="Leave blank to keep the current password"
+                    type="number"
+                    min="13"
+                    max="120"
+                    value={accountForm.age}
+                    onChange={(event) => setAccountForm({ ...accountForm, age: event.target.value })}
+                    placeholder="Optional"
                   />
                 </label>
                 <label className="field">
-                  <span>Confirm password</span>
-                  <input
-                    type="password"
-                    value={accountForm.confirmPassword}
-                    onChange={(event) => setAccountForm({ ...accountForm, confirmPassword: event.target.value })}
-                    placeholder="Repeat the new password"
-                  />
+                  <span>Gender</span>
+                  <select value={accountForm.gender} onChange={(event) => setAccountForm({ ...accountForm, gender: event.target.value })}>
+                    <option value="">Prefer not to say</option>
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                    <option value="Non-binary">Non-binary</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </label>
               </div>
               <button className="action-button primary" type="button" onClick={handleSaveAccount} disabled={savingAccount}>
                 {savingAccount ? "Saving..." : "Save Account"}
+              </button>
+            </div>
+
+            <div className="panel">
+              <div className="section-heading">
+                <h3>Password Reset</h3>
+                <p>Send a reset link to your verified email instead of changing passwords directly in-app.</p>
+              </div>
+              <label className="field">
+                <span>Reset email</span>
+                <input value={session?.user?.email || ""} readOnly />
+              </label>
+              <button className="action-button primary" type="button" onClick={handleSendPasswordReset}>
+                Send Reset Link
               </button>
             </div>
 
