@@ -782,6 +782,20 @@ export default function App() {
     textarea.style.overflowY = textarea.scrollHeight > 120 ? "auto" : "hidden";
   }
 
+  async function enforceVerifiedSession(client, nextSession) {
+    if (!nextSession?.user) {
+      setSession(null);
+      return;
+    }
+    if (nextSession.user.email_confirmed_at) {
+      setSession(nextSession);
+      return;
+    }
+    await client.auth.signOut();
+    setSession(null);
+    setError("Verify your email before signing in.");
+  }
+
   function navigateTo(nextPath) {
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, "", nextPath);
@@ -869,11 +883,11 @@ export default function App() {
           return;
         }
         setSupabaseClient(client);
-        setSession(sessionResult.data.session || null);
+        await enforceVerifiedSession(client, sessionResult.data.session || null);
         setAuthConfigError("");
 
         const { data: listener } = client.auth.onAuthStateChange((_event, nextSession) => {
-          setSession(nextSession || null);
+          void enforceVerifiedSession(client, nextSession || null);
         });
         unsubscribe = () => listener.subscription.unsubscribe();
 
