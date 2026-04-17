@@ -10,13 +10,15 @@ from typing import Any
 from sqlalchemy import MetaData, String, bindparam, cast, create_engine, event, func, inspect, or_, select, text
 from sqlalchemy.engine import Engine, Row
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, StaticPool
 
 from utils.company_inference import ensure_job_company
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "jobs.db"
 DEFAULT_LOCAL_USER_ID = "__local_single_user__"
+GUEST_USER_PREFIX = "__guest__:"
+_GUEST_ENGINES: dict[str, Engine] = {}
 ADMIN_TABLE_RULES: dict[str, dict[str, Any]] = {
     "search_sessions": {
         "editable": {"job_title", "location", "work_style", "k"},
@@ -105,6 +107,191 @@ def _build_engine() -> Engine:
 
 
 ENGINE = _build_engine()
+
+
+def _is_guest_user_id(user_id: str | None) -> bool:
+    return str(user_id or "").startswith(GUEST_USER_PREFIX)
+
+
+def _init_guest_engine(engine: Engine, guest_user_id: str) -> None:
+    now = _utcnow()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS search_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    job_title TEXT NOT NULL,
+                    location TEXT,
+                    work_style TEXT,
+                    k INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS job_postings (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    title TEXT,
+                    company TEXT,
+                    location TEXT,
+                    url TEXT UNIQUE,
+                    source TEXT,
+                    description TEXT,
+                    job_type TEXT,
+                    salary_text TEXT,
+                    search_query TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS session_jobs (
+                    session_id INTEGER,
+                    job_id TEXT,
+                    PRIMARY KEY (session_id, job_id),
+                    FOREIGN KEY (session_id) REFERENCES search_sessions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS resumes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    filename TEXT,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    job_id TEXT NOT NULL UNIQUE,
+                    resume_id INTEGER,
+                    status TEXT NOT NULL DEFAULT 'saved',
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE CASCADE,
+                    FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_threads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    title TEXT NOT NULL,
+                    thread_type TEXT NOT NULL DEFAULT 'job',
+                    job_id TEXT,
+                    resume_id INTEGER,
+                    application_id INTEGER,
+                    messages_json TEXT NOT NULL DEFAULT '[]',
+                    helper_insights_json TEXT,
+                    helper_insights_status TEXT NOT NULL DEFAULT 'idle',
+                    helper_insights_error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES job_postings(id) ON DELETE SET NULL,
+                    FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL,
+                    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE SET NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS user_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL UNIQUE,
+                    first_name TEXT,
+                    last_name TEXT,
+                    username TEXT,
+                    full_name TEXT,
+                    phone TEXT,
+                    summary_text TEXT NOT NULL DEFAULT '',
+                    age INTEGER,
+                    gender TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    thread_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS user_profiles_username_unique ON user_profiles(username)")
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO user_profiles (user_id, summary_text, created_at, updated_at)
+                VALUES (:user_id, '', :created_at, :updated_at)
+                ON CONFLICT(user_id) DO NOTHING
+                """
+            ),
+            {"user_id": guest_user_id, "created_at": now, "updated_at": now},
+        )
+
+
+def _engine_for_user(user_id: str | None) -> Engine:
+    resolved_user_id = _resolve_user_id(user_id)
+    if not _is_guest_user_id(resolved_user_id):
+        return ENGINE
+    existing = _GUEST_ENGINES.get(resolved_user_id)
+    if existing is not None:
+        return existing
+    engine = create_engine(
+        "sqlite://",
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_guest_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.close()
+
+    _init_guest_engine(engine, resolved_user_id)
+    _GUEST_ENGINES[resolved_user_id] = engine
+    return engine
 
 
 def get_conn():
@@ -791,7 +978,7 @@ def init_db():
 def save_session(job_title: str, location: str, work_style: str, k: int, user_id: str | None = None) -> int:
     created_at = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -837,12 +1024,15 @@ def list_sessions(limit: int = 20, user_id: str | None = None):
             {"limit": int(limit), "user_id": resolved_user_id},
         )
         return _fetchall_tuples(result)
+    if _is_guest_user_id(resolved_user_id):
+        with _engine_for_user(resolved_user_id).begin() as conn:
+            return _work(conn)
     return _run_with_disconnect_retry(_work)
 
 
 def delete_session(session_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -921,7 +1111,7 @@ def delete_session(session_id: int, user_id: str | None = None):
 
 def update_session_title(session_id: int, job_title: str, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -942,7 +1132,7 @@ def update_session_title(session_id: int, job_title: str, user_id: str | None = 
 def save_jobs_for_session(session_id: int, jobs: list[dict], user_id: str | None = None):
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         for raw_job in jobs:
             job = _normalize_job(raw_job, user_id=resolved_user_id)
             conn.execute(
@@ -990,7 +1180,7 @@ def save_jobs_for_session(session_id: int, jobs: list[dict], user_id: str | None
 
 def get_jobs_for_session(session_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1014,7 +1204,7 @@ def get_jobs_for_session(session_id: int, user_id: str | None = None):
 
 def list_recent_jobs(limit: int = 200, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1059,7 +1249,7 @@ def search_jobs(query: str = "", limit: int = 20, status: str | None = None, use
 
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
-    with ENGINE.begin() as conn:
+    with _engine_for_user(params["user_id"]).begin() as conn:
         result = conn.execute(
             text(
                 f"""
@@ -1082,7 +1272,7 @@ def search_jobs(query: str = "", limit: int = 20, status: str | None = None, use
 
 def get_job(job_id: str, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1106,7 +1296,7 @@ def get_job(job_id: str, user_id: str | None = None):
 def save_resume(filename: str, resume_text: str, user_id: str | None = None) -> int:
     created_at = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1122,7 +1312,7 @@ def save_resume(filename: str, resume_text: str, user_id: str | None = None) -> 
 
 def list_resumes(limit: int = 20, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1140,7 +1330,7 @@ def list_resumes(limit: int = 20, user_id: str | None = None):
 
 def delete_resume(resume_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text("UPDATE applications SET resume_id = NULL WHERE resume_id = :resume_id AND user_id = :user_id"),
             {"resume_id": int(resume_id), "user_id": resolved_user_id},
@@ -1167,7 +1357,7 @@ def delete_resume(resume_id: int, user_id: str | None = None):
 
 def update_resume_filename(resume_id: int, filename: str, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -1186,7 +1376,7 @@ def update_resume_filename(resume_id: int, filename: str, user_id: str | None = 
 
 def get_resume(resume_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1204,7 +1394,7 @@ def get_resume(resume_id: int, user_id: str | None = None):
 
 def get_latest_resume(user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1229,7 +1419,7 @@ def upsert_application(
 ):
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         job_exists = conn.execute(
             text("SELECT id FROM job_postings WHERE id = :job_id AND user_id = :user_id LIMIT 1"),
             {"job_id": job_id, "user_id": resolved_user_id},
@@ -1276,7 +1466,7 @@ def upsert_application(
 
 def get_application_by_job(job_id: str, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1303,7 +1493,7 @@ def list_applications(status: str | None = None, limit: int = 50, user_id: str |
         where_sql += " AND a.status = :status"
         params["status"] = status
 
-    with ENGINE.begin() as conn:
+    with _engine_for_user(params["user_id"]).begin() as conn:
         result = conn.execute(
             text(
                 f"""
@@ -1325,7 +1515,7 @@ def list_applications(status: str | None = None, limit: int = 50, user_id: str |
 
 def delete_application(job_id: str, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text("UPDATE chat_threads SET application_id = NULL WHERE job_id = :job_id AND user_id = :user_id"),
             {"job_id": job_id, "user_id": resolved_user_id},
@@ -1346,7 +1536,7 @@ def create_chat_thread(
 ):
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         if thread_type == "general":
             existing_general = conn.execute(
                 text(
@@ -1414,7 +1604,7 @@ def create_chat_thread(
 
 def get_or_create_general_thread(title: str = "Agent", user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1449,7 +1639,7 @@ def get_or_create_general_thread(title: str = "Agent", user_id: str | None = Non
 
 def update_chat_thread_title(thread_id: int, title: str, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -1469,7 +1659,7 @@ def update_chat_thread_title(thread_id: int, title: str, user_id: str | None = N
 
 def touch_chat_thread(thread_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text("UPDATE chat_threads SET updated_at = :updated_at WHERE id = :thread_id AND user_id = :user_id"),
             {"updated_at": _utcnow(), "thread_id": int(thread_id), "user_id": resolved_user_id},
@@ -1485,7 +1675,7 @@ def set_chat_thread_helper_insights(
     user_id: str | None = None,
 ):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -1510,7 +1700,7 @@ def set_chat_thread_helper_insights(
 
 def list_chat_threads(limit: int = 50, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1546,7 +1736,7 @@ def list_chat_threads(limit: int = 50, user_id: str | None = None):
 
 def get_chat_thread(thread_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1580,7 +1770,7 @@ def get_chat_thread(thread_id: int, user_id: str | None = None):
 
 def get_chat_messages(thread_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1610,7 +1800,7 @@ def get_chat_messages(thread_id: int, user_id: str | None = None):
 def add_chat_message(thread_id: int, role: str, content: str, user_id: str | None = None):
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         thread_row = conn.execute(
             text("SELECT id, messages_json FROM chat_threads WHERE id = :thread_id AND user_id = :user_id"),
             {"thread_id": int(thread_id), "user_id": resolved_user_id},
@@ -1647,7 +1837,7 @@ def add_chat_message(thread_id: int, role: str, content: str, user_id: str | Non
 
 def clear_chat_thread(thread_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -1666,7 +1856,7 @@ def clear_chat_thread(thread_id: int, user_id: str | None = None):
 
 def delete_chat_thread(thread_id: int, user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text("DELETE FROM chat_threads WHERE id = :thread_id AND user_id = :user_id"),
             {"thread_id": int(thread_id), "user_id": resolved_user_id},
@@ -1675,7 +1865,7 @@ def delete_chat_thread(thread_id: int, user_id: str | None = None):
 
 def get_user_profile(user_id: str | None = None):
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         result = conn.execute(
             text(
                 """
@@ -1719,7 +1909,7 @@ def save_user_profile(
 ):
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -1771,7 +1961,7 @@ def save_user_account_profile(
     now = _utcnow()
     resolved_user_id = _resolve_user_id(user_id)
     full_name = f"{first_name.strip()} {last_name.strip()}".strip()
-    with ENGINE.begin() as conn:
+    with _engine_for_user(resolved_user_id).begin() as conn:
         conn.execute(
             text(
                 """
@@ -1814,10 +2004,13 @@ def username_exists(username: str, exclude_user_id: str | None = None) -> bool:
         return False
     params: dict[str, Any] = {"username": normalized}
     where_sql = "LOWER(username) = :username"
+    lookup_user_id = DEFAULT_LOCAL_USER_ID
     if exclude_user_id:
+        resolved_exclude = _resolve_user_id(exclude_user_id)
         where_sql += " AND user_id != :exclude_user_id"
-        params["exclude_user_id"] = _resolve_user_id(exclude_user_id)
-    with ENGINE.begin() as conn:
+        params["exclude_user_id"] = resolved_exclude
+        lookup_user_id = resolved_exclude
+    with _engine_for_user(lookup_user_id).begin() as conn:
         result = conn.execute(
             text(f"SELECT 1 FROM user_profiles WHERE {where_sql} LIMIT 1"),
             params,

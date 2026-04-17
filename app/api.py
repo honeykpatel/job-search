@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from collectors.api_adzuna import search_adzuna
-from app.auth import auth_config, require_user_id
+from app.auth import auth_config, create_guest_token, require_user_id
 from app.auth import require_admin, verify_admin_login
 from app.conversation import (
     build_langchain_messages,
@@ -455,6 +455,17 @@ def health_check() -> dict[str, str]:
 @app.get("/api/auth/config")
 def get_auth_config() -> dict[str, str]:
     return auth_config()
+
+
+@app.post("/api/guest/session")
+def create_guest_session() -> dict[str, Any]:
+    guest_session = create_guest_token()
+    return {
+        "token": guest_session["token"],
+        "guest_user_id": guest_session["guest_user_id"],
+        "expires_at": guest_session["expires_at"],
+        "label": "Guest",
+    }
 
 
 @app.post("/api/admin/login")

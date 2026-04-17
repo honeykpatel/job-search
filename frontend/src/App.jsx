@@ -22,6 +22,7 @@ async function api(path, options = {}) {
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+      ...(options.guestToken ? { "X-Guest-Token": options.guestToken } : {}),
       ...(options.adminToken ? { "X-Admin-Token": options.adminToken } : {}),
       ...(options.headers || {}),
     },
@@ -52,6 +53,8 @@ function AuthShell({
   onChange,
   onSubmit,
   onOpenAdmin,
+  onContinueAsGuest,
+  guestLoading,
 }) {
   return (
     <main className="auth-shell">
@@ -59,7 +62,7 @@ function AuthShell({
         <span className="status-pill">Private workspace</span>
         <h1>Job Pilot</h1>
         <p className="muted">
-          Sign in to access your own search sessions, resumes, applications, Agent, and Helpers.
+          Sign in to keep a persistent workspace, or continue as a guest to try the product without saving anything permanently.
         </p>
         <form className="auth-form" onSubmit={onSubmit}>
           <label className="field">
@@ -177,6 +180,9 @@ function AuthShell({
         </button>
         <button className="action-button subtle" type="button" onClick={onOpenAdmin}>
           Admin Login
+        </button>
+        <button className="action-button subtle" type="button" onClick={onContinueAsGuest} disabled={guestLoading}>
+          {guestLoading ? "Starting guest mode..." : "Continue as Guest"}
         </button>
       </section>
     </main>
@@ -676,8 +682,18 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [adminSubmitting, setAdminSubmitting] = useState(false);
+  const [guestSubmitting, setGuestSubmitting] = useState(false);
   const [supabaseClient, setSupabaseClient] = useState(null);
   const [session, setSession] = useState(null);
+  const [guestSession, setGuestSession] = useState(() => {
+    try {
+      const raw = window.sessionStorage.getItem("jobpilot_guest_session");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      window.sessionStorage.removeItem("jobpilot_guest_session");
+      return null;
+    }
+  });
   const [adminSession, setAdminSession] = useState(null);
   const [authConfigError, setAuthConfigError] = useState("");
   const [page, setPage] = useState("Job Search");
@@ -765,6 +781,17 @@ export default function App() {
   const helperInsightsScrollRef = useRef({ top: 0 });
   const suppressHelperInsightsAutoHideRef = useRef(false);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+  const workspaceAccessToken = session?.access_token || "";
+  const workspaceGuestToken = guestSession?.token || "";
+  const hasWorkspaceSession = !!(workspaceAccessToken || workspaceGuestToken);
+
+  function workspaceRequest(path, options = {}) {
+    return api(path, {
+      ...options,
+      accessToken: workspaceAccessToken || undefined,
+      guestToken: workspaceGuestToken || undefined,
+    });
+  }
 
   function syncHelperInsightsVisibility(chatLog, { forceVisible = false } = {}) {
     if (!chatLog) {
@@ -803,6 +830,7 @@ export default function App() {
       return;
     }
     if (nextSession.user.email_confirmed_at) {
+      setGuestSession(null);
       setSession(nextSession);
       return;
     }
@@ -832,6 +860,18 @@ export default function App() {
       window.localStorage.removeItem("jobpilot_admin_session");
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      if (guestSession?.token) {
+        window.sessionStorage.setItem("jobpilot_guest_session", JSON.stringify(guestSession));
+      } else {
+        window.sessionStorage.removeItem("jobpilot_guest_session");
+      }
+    } catch {
+      // Ignore storage failures for guest sessions.
+    }
+  }, [guestSession]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -926,7 +966,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!session?.access_token) {
+    if (!hasWorkspaceSession) {
       setSessions([]);
       setResumes([]);
       setJobs([]);
@@ -943,8 +983,8 @@ export default function App() {
       setPendingAction(null);
       return;
     }
-    void bootstrap(session.access_token);
-  }, [session?.access_token]);
+    void bootstrap();
+  }, [hasWorkspaceSession, workspaceAccessToken, workspaceGuestToken]);
 
   useEffect(() => {
     if (!adminSession?.token) {
@@ -962,11 +1002,11 @@ export default function App() {
     }
 
     window.localStorage.setItem("jobpilot_admin_session", JSON.stringify(adminSession));
-    if (!session?.access_token) {
+    if (!hasWorkspaceSession) {
       setPage("Admin");
     }
     void loadAdminTables(adminSession.token);
-  }, [adminSession, isAdminRoute, page, session?.access_token]);
+  }, [adminSession, hasWorkspaceSession, isAdminRoute, page]);
 
   useEffect(() => {
     if (isAdminRoute) {
@@ -976,16 +1016,16 @@ export default function App() {
       return;
     }
 
-    if (page === "Admin" && session?.access_token) {
+    if (page === "Admin" && hasWorkspaceSession) {
       setPage("Job Search");
     }
-  }, [isAdminRoute, page, session?.access_token]);
+  }, [hasWorkspaceSession, isAdminRoute, page]);
 
   useEffect(() => {
-    if (adminSession?.token && !session?.access_token && !isAdminRoute) {
+    if (adminSession?.token && !hasWorkspaceSession && !isAdminRoute) {
       navigateTo("/admin");
     }
-  }, [adminSession?.token, isAdminRoute, session?.access_token]);
+  }, [adminSession?.token, hasWorkspaceSession, isAdminRoute]);
 
   useEffect(() => {
     if (!adminSession?.token || !selectedAdminTable) {
@@ -996,7 +1036,7 @@ export default function App() {
   }, [adminSession?.token, selectedAdminTable, adminTableOffset]);
 
   useEffect(() => {
-    if (!session?.access_token) {
+    if (!hasWorkspaceSession) {
       setSelectedSessionJobs([]);
       setSelectedSessionJobId("");
       return;
@@ -1010,7 +1050,7 @@ export default function App() {
     void (async () => {
       try {
         setError("");
-        const data = await api(`/api/sessions/${selectedSessionId}/jobs`, { accessToken: session?.access_token });
+        const data = await workspaceRequest(`/api/sessions/${selectedSessionId}/jobs`);
         setSelectedSessionJobs(data);
         setSelectedSessionJobId((current) => (data.some((job) => job.id === current) ? current : (data[0]?.id || "")));
       } catch (err) {
@@ -1020,7 +1060,7 @@ export default function App() {
   }, [selectedSessionId]);
 
   useEffect(() => {
-    if (!session?.access_token) {
+    if (!hasWorkspaceSession) {
       setSelectedResume(null);
       return;
     }
@@ -1032,7 +1072,7 @@ export default function App() {
     void (async () => {
       try {
         setError("");
-        const data = await api(`/api/resumes/${selectedResumeId}`, { accessToken: session?.access_token });
+        const data = await workspaceRequest(`/api/resumes/${selectedResumeId}`);
         setSelectedResume(data);
       } catch (err) {
         setError(err.message);
@@ -1041,13 +1081,13 @@ export default function App() {
   }, [selectedResumeId]);
 
   useEffect(() => {
-    if (session?.access_token) {
+    if (hasWorkspaceSession) {
       void loadApplicationJobs();
     }
-  }, [applicationQuery, applicationStatusFilter, applicationLimit, session?.access_token]);
+  }, [applicationQuery, applicationStatusFilter, applicationLimit, hasWorkspaceSession, workspaceAccessToken, workspaceGuestToken]);
 
   useEffect(() => {
-    if (!session?.access_token) {
+    if (!hasWorkspaceSession) {
       setSelectedThread(null);
       setAgentThread(null);
       setPendingAction(null);
@@ -1060,16 +1100,16 @@ export default function App() {
     }
     void loadThread(selectedThreadId);
     setPendingAction(null);
-  }, [selectedThreadId, session?.access_token]);
+  }, [selectedThreadId, hasWorkspaceSession, workspaceAccessToken, workspaceGuestToken]);
 
   useEffect(() => {
-    const shouldShowDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+    const shouldShowDesktopAgentRail = isDesktopViewport && hasWorkspaceSession && !isAdminRoute;
     const nextMainAgentThread = threads.find((thread) => thread.thread_type === "general") || null;
     if (!shouldShowDesktopAgentRail || !nextMainAgentThread?.id) {
       return;
     }
     void loadAgentThread(nextMainAgentThread.id);
-  }, [threads, session?.access_token, isDesktopViewport, isAdminRoute]);
+  }, [threads, hasWorkspaceSession, isDesktopViewport, isAdminRoute, workspaceAccessToken, workspaceGuestToken]);
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
@@ -1115,7 +1155,7 @@ export default function App() {
 
   useEffect(() => {
     const chatLog = agentChatLogRef.current;
-    const shouldShowDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+    const shouldShowDesktopAgentRail = isDesktopViewport && hasWorkspaceSession && !isAdminRoute;
     if (!chatLog || !shouldShowDesktopAgentRail) {
       return;
     }
@@ -1125,7 +1165,7 @@ export default function App() {
     });
 
     return () => window.cancelAnimationFrame(rafId);
-  }, [agentThread?.messages, sendingAgentChat, isDesktopViewport, session?.access_token, isAdminRoute]);
+  }, [agentThread?.messages, sendingAgentChat, hasWorkspaceSession, isDesktopViewport, isAdminRoute]);
 
   useEffect(() => {
     resizeComposerTextarea(agentChatInputRef.current);
@@ -1154,7 +1194,7 @@ export default function App() {
 
   useEffect(() => {
     if (
-      !session?.access_token ||
+      !hasWorkspaceSession ||
       !selectedThreadId ||
       page !== "Helpers" ||
       !isDesktopViewport ||
@@ -1166,9 +1206,8 @@ export default function App() {
     }
 
     let cancelled = false;
-    void api(`/api/threads/${selectedThreadId}/helper-insights`, {
+    void workspaceRequest(`/api/threads/${selectedThreadId}/helper-insights`, {
       method: "POST",
-      accessToken: session.access_token,
     })
       .then((data) => {
         if (cancelled) {
@@ -1205,23 +1244,23 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [page, isDesktopViewport, selectedThreadId, selectedThread, session?.access_token]);
+  }, [page, isDesktopViewport, selectedThreadId, selectedThread, hasWorkspaceSession, workspaceAccessToken, workspaceGuestToken]);
 
-  async function bootstrap(accessToken) {
+  async function bootstrap() {
     try {
       setError("");
       let [sessionData, resumeData, recentJobs, threadData, profileData, pipelineData, accountData] = await Promise.all([
-        api("/api/sessions", { accessToken }),
-        api("/api/resumes", { accessToken }),
-        api("/api/jobs/recent?limit=200", { accessToken }),
-        api("/api/threads", { accessToken }),
-        api("/api/profile", { accessToken }),
-        api("/api/pipeline-summary", { accessToken }),
-        api("/api/account", { accessToken }),
+        workspaceRequest("/api/sessions"),
+        workspaceRequest("/api/resumes"),
+        workspaceRequest("/api/jobs/recent?limit=200"),
+        workspaceRequest("/api/threads"),
+        workspaceRequest("/api/profile"),
+        workspaceRequest("/api/pipeline-summary"),
+        workspaceRequest("/api/account"),
       ]);
-      accountData = await ensureAccountProfile(accessToken, accountData);
+      accountData = await ensureAccountProfile(workspaceAccessToken, accountData);
       if (!threadData.some((thread) => thread.thread_type === "general")) {
-        const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
+        const deepAgentThread = await workspaceRequest("/api/threads/general", { method: "POST" });
         threadData = [deepAgentThread, ...threadData];
       }
       setSessions(sessionData);
@@ -1252,19 +1291,18 @@ export default function App() {
   }
 
   async function refreshCollections() {
-    const accessToken = session?.access_token;
     let [sessionData, resumeData, recentJobs, threadData, pipelineData, profileData, accountData] = await Promise.all([
-      api("/api/sessions", { accessToken }),
-      api("/api/resumes", { accessToken }),
-      api("/api/jobs/recent?limit=200", { accessToken }),
-      api("/api/threads", { accessToken }),
-      api("/api/pipeline-summary", { accessToken }),
-      api("/api/profile", { accessToken }),
-      api("/api/account", { accessToken }),
+      workspaceRequest("/api/sessions"),
+      workspaceRequest("/api/resumes"),
+      workspaceRequest("/api/jobs/recent?limit=200"),
+      workspaceRequest("/api/threads"),
+      workspaceRequest("/api/pipeline-summary"),
+      workspaceRequest("/api/profile"),
+      workspaceRequest("/api/account"),
     ]);
-    accountData = await ensureAccountProfile(accessToken, accountData);
+    accountData = await ensureAccountProfile(workspaceAccessToken, accountData);
     if (!threadData.some((thread) => thread.thread_type === "general")) {
-      const deepAgentThread = await api("/api/threads/general", { method: "POST", accessToken });
+      const deepAgentThread = await workspaceRequest("/api/threads/general", { method: "POST" });
       threadData = [deepAgentThread, ...threadData];
     }
     const nextSelectedSessionId =
@@ -1292,7 +1330,7 @@ export default function App() {
       current && threadData.some((thread) => thread.id === current) ? current : null
     );
     if (nextSelectedSessionId) {
-      const sessionJobs = await api(`/api/sessions/${nextSelectedSessionId}/jobs`, { accessToken });
+      const sessionJobs = await workspaceRequest(`/api/sessions/${nextSelectedSessionId}/jobs`);
       setSelectedSessionJobs(sessionJobs);
       setSelectedSessionJobId((current) =>
         sessionJobs.some((job) => job.id === current) ? current : (sessionJobs[0]?.id || "")
@@ -1305,7 +1343,7 @@ export default function App() {
   }
 
   async function fetchThread(threadId) {
-    return api(`/api/threads/${threadId}`, { accessToken: session?.access_token });
+    return workspaceRequest(`/api/threads/${threadId}`);
   }
 
   async function ensureAccountProfile(accessToken, accountData) {
@@ -1425,7 +1463,7 @@ export default function App() {
       if (applicationStatusFilter !== "All") {
         params.set("status", applicationStatusFilter);
       }
-      const data = await api(`/api/jobs?${params.toString()}`, { accessToken: session?.access_token });
+      const data = await workspaceRequest(`/api/jobs?${params.toString()}`);
       setApplicationJobs(data);
       if (data.length) {
         setSelectedApplicationJobId((current) =>
@@ -1445,10 +1483,9 @@ export default function App() {
       setSearching(true);
       setError("");
       setNotice("");
-      const data = await api("/api/search", {
+      const data = await workspaceRequest("/api/search", {
         method: "POST",
         body: JSON.stringify({ ...searchForm, k: Number(searchForm.k), save_results: true }),
-        accessToken: session?.access_token,
       });
       setSearchResult(data);
       if (data.jobs.length) {
@@ -1480,7 +1517,7 @@ export default function App() {
       setUploadingResume(true);
       setError("");
       setNotice("");
-      const resume = await api("/api/resumes", { method: "POST", body: formData, accessToken: session?.access_token });
+      const resume = await workspaceRequest("/api/resumes", { method: "POST", body: formData });
       setNotice(`Saved resume ${resume.filename || "successfully"}.`);
       setSelectedResumeId(resume.id);
       setMatchResumeId(String(resume.id));
@@ -1501,7 +1538,7 @@ export default function App() {
       if (matchResumeId) {
         params.set("resume_id", matchResumeId);
       }
-      const data = await api(`/api/matches?${params.toString()}`, { accessToken: session?.access_token });
+      const data = await workspaceRequest(`/api/matches?${params.toString()}`);
       setMatchMeta(data.resume);
       setMatches(data.matches || []);
     } catch (err) {
@@ -1515,10 +1552,9 @@ export default function App() {
     try {
       setError("");
       const summaryText = serializeProfileForm(profileForm);
-      const saved = await api("/api/profile", {
+      const saved = await workspaceRequest("/api/profile", {
         method: "PUT",
         body: JSON.stringify({ summary_text: summaryText }),
-        accessToken: session?.access_token,
       });
       setProfile(saved);
       setProfileForm(parseProfileSummary(saved.summary_text || ""));
@@ -1529,7 +1565,7 @@ export default function App() {
   }
 
   async function handleSaveAccount() {
-    if (!session?.access_token || !supabaseClient) {
+    if (!hasWorkspaceSession) {
       return;
     }
     if (!accountForm.first_name.trim() || !accountForm.last_name.trim()) {
@@ -1552,7 +1588,7 @@ export default function App() {
     try {
       setSavingAccount(true);
       setError("");
-      const savedAccount = await api("/api/account", {
+      const savedAccount = await workspaceRequest("/api/account", {
         method: "PUT",
         body: JSON.stringify({
           first_name: accountForm.first_name,
@@ -1562,22 +1598,23 @@ export default function App() {
           age: accountForm.age ? Number(accountForm.age) : null,
           gender: accountForm.gender,
         }),
-        accessToken: session.access_token,
       });
 
-      const { error: updateError } = await supabaseClient.auth.updateUser({
-        data: {
-          first_name: savedAccount.first_name,
-          last_name: savedAccount.last_name,
-          full_name: savedAccount.full_name,
-          username: savedAccount.username,
-          phone: savedAccount.phone,
-          age: savedAccount.age,
-          gender: savedAccount.gender,
-        },
-      });
-      if (updateError) {
-        throw updateError;
+      if (workspaceAccessToken && supabaseClient) {
+        const { error: updateError } = await supabaseClient.auth.updateUser({
+          data: {
+            first_name: savedAccount.first_name,
+            last_name: savedAccount.last_name,
+            full_name: savedAccount.full_name,
+            username: savedAccount.username,
+            phone: savedAccount.phone,
+            age: savedAccount.age,
+            gender: savedAccount.gender,
+          },
+        });
+        if (updateError) {
+          throw updateError;
+        }
       }
 
       setAccountForm({
@@ -1597,6 +1634,10 @@ export default function App() {
   }
 
   async function handleSendPasswordReset() {
+    if (workspaceGuestToken) {
+      setError("Guest mode does not support password reset.");
+      return;
+    }
     if (!supabaseClient || !session?.user?.email) {
       return;
     }
@@ -1617,7 +1658,7 @@ export default function App() {
   async function handleCreateGeneralThread() {
     try {
       setError("");
-      const thread = await api("/api/threads/general", { method: "POST", accessToken: session?.access_token });
+      const thread = await workspaceRequest("/api/threads/general", { method: "POST" });
       await refreshCollections();
       setSelectedThreadId(thread.id);
       setPage("Agent");
@@ -1635,13 +1676,12 @@ export default function App() {
 
     try {
       setError("");
-      const thread = await api("/api/threads/job", {
+      const thread = await workspaceRequest("/api/threads/job", {
         method: "POST",
         body: JSON.stringify({
           job_id: newThreadForm.job_id,
           resume_id: Number(newThreadForm.resume_id),
         }),
-        accessToken: session?.access_token,
       });
       await refreshCollections();
       setSelectedThreadId(thread.id);
@@ -1689,13 +1729,12 @@ export default function App() {
         messages: [...(current?.messages || []), optimisticMessage],
       }));
       setChatInput("");
-      const response = await api(`/api/threads/${selectedThreadId}/messages`, {
+      const response = await workspaceRequest(`/api/threads/${selectedThreadId}/messages`, {
         method: "POST",
         body: JSON.stringify({
           content,
           show_tool_debug: showToolDebug,
         }),
-        accessToken: session?.access_token,
       });
       setSelectedThread((current) => ({ ...(current || {}), messages: response.messages }));
       setPendingAction(response.pending_action || null);
@@ -1749,13 +1788,12 @@ export default function App() {
         messages: [...(current?.messages || []), optimisticMessage],
       }));
       setAgentChatInput("");
-      const response = await api(`/api/threads/${mainAgentThread.id}/messages`, {
+      const response = await workspaceRequest(`/api/threads/${mainAgentThread.id}/messages`, {
         method: "POST",
         body: JSON.stringify({
           content,
           show_tool_debug: showToolDebug,
         }),
-        accessToken: session?.access_token,
       });
       setAgentThread((current) => ({ ...(current || {}), messages: response.messages }));
       setPendingAction(response.pending_action || null);
@@ -1780,7 +1818,7 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/threads/${selectedThreadId}/clear`, { method: "POST", accessToken: session?.access_token });
+      await workspaceRequest(`/api/threads/${selectedThreadId}/clear`, { method: "POST" });
       setPendingAction(null);
       setPendingActionThreadId(null);
       setTimelineEventsByThread((current) => ({ ...current, [selectedThreadId]: [] }));
@@ -1794,7 +1832,7 @@ export default function App() {
   async function handleDeleteThread(threadId) {
     try {
       setError("");
-      await api(`/api/threads/${threadId}`, { method: "DELETE", accessToken: session?.access_token });
+      await workspaceRequest(`/api/threads/${threadId}`, { method: "DELETE" });
       if (selectedThreadId === threadId || pendingActionThreadId === threadId) {
         setPendingAction(null);
         setPendingActionThreadId(null);
@@ -1816,10 +1854,9 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/threads/${threadId}`, {
+      await workspaceRequest(`/api/threads/${threadId}`, {
         method: "PUT",
         body: JSON.stringify({ title: nextTitle.trim() }),
-        accessToken: session?.access_token,
       });
       setOpenSidebarItemMenu(null);
       await refreshCollections();
@@ -1838,7 +1875,7 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/sessions/${sessionId}`, { method: "DELETE", accessToken: session?.access_token });
+      await workspaceRequest(`/api/sessions/${sessionId}`, { method: "DELETE" });
       setNotice("Deleted saved search and its related jobs, chats, and tracker data.");
       setSearchResult((current) =>
         current.session_id === sessionId ? { session_id: null, jobs: [], sources: {} } : current
@@ -1863,10 +1900,9 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/sessions/${sessionId}`, {
+      await workspaceRequest(`/api/sessions/${sessionId}`, {
         method: "PUT",
         body: JSON.stringify({ title: nextTitle.trim() }),
-        accessToken: session?.access_token,
       });
       setOpenSidebarItemMenu(null);
       await refreshCollections();
@@ -1883,7 +1919,7 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/resumes/${resumeId}`, { method: "DELETE", accessToken: session?.access_token });
+      await workspaceRequest(`/api/resumes/${resumeId}`, { method: "DELETE" });
       if (selectedResumeId === resumeId) {
         setSelectedResumeId(null);
       }
@@ -1902,10 +1938,9 @@ export default function App() {
 
     try {
       setError("");
-      await api(`/api/resumes/${resumeId}`, {
+      await workspaceRequest(`/api/resumes/${resumeId}`, {
         method: "PUT",
         body: JSON.stringify({ title: nextTitle.trim() }),
-        accessToken: session?.access_token,
       });
       setOpenSidebarItemMenu(null);
       await refreshCollections();
@@ -1918,14 +1953,13 @@ export default function App() {
     try {
       setSavingApplication(true);
       setError("");
-      await api(`/api/applications/${job.id}`, {
+      await workspaceRequest(`/api/applications/${job.id}`, {
         method: "PUT",
         body: JSON.stringify({
           resume_id: job.resume_id || null,
           status: job.application_status || "saved",
           notes: job.application_notes || "",
         }),
-        accessToken: session?.access_token,
       });
       setNotice(`Updated tracker for ${job.title || "job"}.`);
       await refreshCollections();
@@ -2091,13 +2125,12 @@ export default function App() {
       const lastVisibleMessageId = [...(sourceThread?.messages || [])]
         .filter((message) => showToolDebug || message.role !== "tool")
         .at(-1)?.id;
-      const response = await api(`/api/threads/${pendingActionThreadId}/actions/approve`, {
+      const response = await workspaceRequest(`/api/threads/${pendingActionThreadId}/actions/approve`, {
         method: "POST",
         body: JSON.stringify({
           action_type: action.type,
           params: action.params,
         }),
-        accessToken: session?.access_token,
       });
       const eventText = approvalEventLabel(action.type, true);
       setPendingAction(null);
@@ -2331,7 +2364,7 @@ export default function App() {
   const selectedSessionJob = selectedSessionJobs.find((job) => job.id === selectedSessionJobId) || selectedSessionJobs[0] || null;
   const bestMatchScore = matches.length ? Math.max(...matches.map((item) => Number(item.score || 0))) : null;
   const leastMatchScore = matches.length ? Math.min(...matches.map((item) => Number(item.score || 0))) : null;
-  const showDesktopAgentRail = isDesktopViewport && !!session?.access_token && !isAdminRoute;
+  const showDesktopAgentRail = isDesktopViewport && hasWorkspaceSession && !isAdminRoute;
   const selectedHelperInsightsMeta =
     selectedThread?.thread_type && selectedThread.thread_type !== "general"
       ? helperInsightsMetaByThreadId[selectedThread.id] || {
@@ -3020,15 +3053,38 @@ export default function App() {
   }
 
   async function handleSignOut() {
-    if (!supabaseClient) {
-      return;
-    }
     try {
       setError("");
+      if (workspaceGuestToken) {
+        setGuestSession(null);
+        setNotice("");
+        return;
+      }
+      if (!supabaseClient) {
+        return;
+      }
       await supabaseClient.auth.signOut();
       setNotice("");
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function handleGuestAccess() {
+    try {
+      setGuestSubmitting(true);
+      setError("");
+      setNotice("");
+      const nextGuestSession = await api("/api/guest/session", { method: "POST" });
+      setGuestSession(nextGuestSession);
+      setSession(null);
+      setPage("Job Search");
+      navigateTo("/");
+      setNotice("Guest workspace started. Data will stay only in temporary server memory.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuestSubmitting(false);
     }
   }
 
@@ -3066,7 +3122,7 @@ export default function App() {
     );
   }
 
-  if (!isAdminRoute && !session?.access_token && !adminSession?.token) {
+  if (!isAdminRoute && !hasWorkspaceSession && !adminSession?.token) {
     return (
       <>
         <AuthShell
@@ -3078,6 +3134,8 @@ export default function App() {
           onChange={setAuthForm}
           onSubmit={handleAuthSubmit}
           onOpenAdmin={() => navigateTo("/admin")}
+          onContinueAsGuest={handleGuestAccess}
+          guestLoading={guestSubmitting}
         />
         <NotificationPopup type={notificationType} message={notificationMessage} onDismiss={dismissNotification} />
       </>
@@ -3085,7 +3143,7 @@ export default function App() {
   }
 
   const visiblePages = showDesktopAgentRail ? DESKTOP_PAGES : MOBILE_PAGES;
-  const navPages = session?.access_token
+  const navPages = hasWorkspaceSession
     ? [...visiblePages, ...(adminSession?.token ? ["Admin"] : [])]
     : ["Admin"];
   const currentUserFullName =
@@ -3093,6 +3151,7 @@ export default function App() {
     String(session?.user?.user_metadata?.full_name || "").trim();
   const currentUserLabel =
     currentUserFullName ||
+    guestSession?.label ||
     session?.user?.email ||
     (adminSession?.username ? `Admin: ${adminSession.username}` : "Signed in");
   const avatarLabel = currentUserLabel
@@ -3452,7 +3511,7 @@ export default function App() {
               <div className="sidebar-account-copy">
                 <strong>{currentUserLabel}</strong>
                 <span className="sidebar-caption">
-                  {adminSession?.token && !session?.access_token ? "Admin workspace" : "Private workspace"}
+                  {adminSession?.token && !hasWorkspaceSession ? "Admin workspace" : guestSession?.token ? "Guest workspace" : "Private workspace"}
                 </span>
               </div>
               <span className="sidebar-account-caret" aria-hidden="true">
@@ -3461,7 +3520,7 @@ export default function App() {
             </button>
             {showAccountMenu ? (
               <div className="sidebar-account-menu">
-                {session?.access_token ? (
+                {hasWorkspaceSession ? (
                   <button
                     className={`nav-button sidebar-account-button ${page === "Profile" ? "active" : ""}`}
                     type="button"
@@ -3483,7 +3542,7 @@ export default function App() {
                     Admin Out
                   </button>
                 ) : null}
-                {session?.access_token ? (
+                {hasWorkspaceSession ? (
                   <button
                     className="action-button subtle sidebar-account-button"
                     type="button"
@@ -3837,11 +3896,20 @@ export default function App() {
               <div className="inline-fields">
                 <label className="field">
                   <span>Email</span>
-                  <input value={session?.user?.email || ""} readOnly />
+                  <input value={workspaceGuestToken ? "Guest session" : (session?.user?.email || "")} readOnly />
                 </label>
                 <label className="field">
                   <span>Email Verification</span>
-                  <input value={session?.user?.email_confirmed_at ? "Verified" : "Pending verification"} readOnly />
+                  <input
+                    value={
+                      workspaceGuestToken
+                        ? "Not required in guest mode"
+                        : session?.user?.email_confirmed_at
+                          ? "Verified"
+                          : "Pending verification"
+                    }
+                    readOnly
+                  />
                 </label>
               </div>
               <div className="inline-fields">
@@ -3911,15 +3979,21 @@ export default function App() {
             <div className="panel">
               <div className="section-heading">
                 <h3>Password Reset</h3>
-                <p>Send a reset link to your verified email instead of changing passwords directly in-app.</p>
+                <p>
+                  {workspaceGuestToken
+                    ? "Guest workspaces are temporary and do not have passwords."
+                    : "Send a reset link to your verified email instead of changing passwords directly in-app."}
+                </p>
               </div>
               <label className="field">
-                <span>Reset email</span>
-                <input value={session?.user?.email || ""} readOnly />
+                <span>{workspaceGuestToken ? "Mode" : "Reset email"}</span>
+                <input value={workspaceGuestToken ? "Guest session" : (session?.user?.email || "")} readOnly />
               </label>
-              <button className="action-button primary" type="button" onClick={handleSendPasswordReset}>
-                Send Reset Link
-              </button>
+              {workspaceGuestToken ? null : (
+                <button className="action-button primary" type="button" onClick={handleSendPasswordReset}>
+                  Send Reset Link
+                </button>
+              )}
             </div>
 
             <div className="panel">
