@@ -27,6 +27,7 @@
   --success-soft: rgba(125, 225, 167, 0.14);
   --shadow-sm: 0 8px 20px rgba(0, 0, 0, 0.18);
   --shadow-md: 0 24px 56px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 30px 90px rgba(0, 0, 0, 0.42);
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 22px;
@@ -55,8 +56,10 @@ body {
   font-family: var(--font-sans);
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.028), transparent 22%),
+    radial-gradient(circle at 12% 6%, rgba(125, 225, 167, 0.08), transparent 26%),
+    radial-gradient(circle at 76% 12%, rgba(255, 255, 255, 0.045), transparent 24%),
     linear-gradient(180deg, #0d0d0e 0%, #080809 100%);
+  overflow-x: hidden;
 }
 
 body.sidebar-open {
@@ -119,6 +122,18 @@ button {
 
 .app-shell {
   min-height: 100vh;
+}
+
+.motion-surface,
+.content > .grid > .panel,
+.content > .panel,
+.job-list-item,
+.card,
+.metric,
+.helper-insight-toggle,
+.mobile-helper-button,
+.chat-message {
+  will-change: transform, opacity;
 }
 
 .sidebar {
@@ -273,6 +288,18 @@ button {
   max-width: 1320px;
   width: 100%;
   margin: 0 auto;
+}
+
+.content::before {
+  content: "";
+  position: fixed;
+  inset: 18px 18px auto auto;
+  width: 260px;
+  height: 260px;
+  pointer-events: none;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(125, 225, 167, 0.07), transparent 68%);
+  filter: blur(8px);
 }
 
 .with-desktop-agent-rail .content {
@@ -510,6 +537,13 @@ button {
 .action-button:hover,
 .icon-button:hover {
   transform: translateY(-1px);
+}
+
+.nav-button:active,
+.mini-button:active,
+.action-button:active,
+.icon-button:active {
+  transform: translateY(0) scale(0.985);
 }
 
 .nav-button:disabled,
@@ -880,6 +914,7 @@ button {
   border-radius: 22px;
   background: rgba(18, 18, 19, 0.98);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  animation: overlay-pop 240ms ease both;
 }
 
 .notification-popup.error {
@@ -962,6 +997,23 @@ button {
   border-radius: 0;
 }
 
+.content > .grid > .panel,
+.content > .panel:not(.chat-panel) {
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.014)),
+    rgba(13, 13, 14, 0.72);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.content > .grid > .panel:hover,
+.content > .panel:not(.chat-panel):hover {
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
 .subpanel {
   padding: 14px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -1020,6 +1072,16 @@ button {
   border: 1px dashed var(--border-strong);
   background: rgba(255, 255, 255, 0.02);
   cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.upload-box:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 225, 167, 0.32);
+  background: rgba(125, 225, 167, 0.035);
 }
 
 .upload-box input {
@@ -1201,6 +1263,10 @@ button {
     linear-gradient(180deg, rgba(17, 17, 18, 0.98), rgba(10, 10, 10, 0.98)),
     var(--bg-panel);
   overflow: hidden;
+  transition:
+    padding 240ms ease,
+    border-color 240ms ease,
+    background 240ms ease;
 }
 
 .desktop-agent-rail.collapsed {
@@ -1221,6 +1287,15 @@ button {
   color: var(--text-strong);
   display: grid;
   place-items: center;
+  transition:
+    transform 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease;
+}
+
+.desktop-agent-toggle:hover {
+  transform: translateX(2px);
+  border-color: rgba(125, 225, 167, 0.28);
 }
 
 .desktop-agent-panel {
@@ -1601,6 +1676,17 @@ button {
   color: var(--text);
   text-align: left;
   box-shadow: var(--shadow-sm);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.helper-insight-toggle:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(22, 22, 24, 0.98);
 }
 
 .helper-insight-toggle span {
@@ -1706,6 +1792,7 @@ button {
   border-radius: 22px;
   background: #1b1b1d;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
 }
 
 .chat-message.assistant {
@@ -1967,6 +2054,16 @@ button {
   border-radius: 18px;
   background: rgba(16, 16, 17, 0.96);
   box-shadow: var(--shadow-md);
+  backdrop-filter: blur(18px);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.chat-compose-bar:focus-within {
+  border-color: rgba(125, 225, 167, 0.26);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(125, 225, 167, 0.08);
 }
 
 .chat-compose-bar textarea {
@@ -2062,6 +2159,40 @@ button {
   40% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes overlay-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -2179,6 +2310,7 @@ button {
   padding: 24px;
   background: rgba(0, 0, 0, 0.68);
   backdrop-filter: blur(14px);
+  animation: overlay-fade 180ms ease both;
 }
 
 .modal-card {
@@ -2190,6 +2322,7 @@ button {
   box-shadow: none;
   overflow: auto;
   overscroll-behavior: contain;
+  animation: overlay-rise 240ms ease both;
 }
 
 .modal-form {
@@ -2341,17 +2474,22 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(125, 225, 167, 0.08), transparent 28%),
+    radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.05), transparent 30%);
 }
 
 .auth-card {
   width: min(560px, 100%);
   display: grid;
   gap: 16px;
-  padding: 30px 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.014));
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(18px);
+  animation: overlay-rise 260ms ease both;
 }
 
 .auth-card h1 {

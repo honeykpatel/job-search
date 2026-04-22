@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
+
+gsap.registerPlugin(useGSAP);
 
 const MOBILE_PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Agent"];
 const DESKTOP_PAGES = ["Job Search", "Resume", "Matching", "Applications", "Profile", "Helpers"];
@@ -778,6 +782,7 @@ export default function App() {
   const agentChatLogRef = useRef(null);
   const chatInputRef = useRef(null);
   const agentChatInputRef = useRef(null);
+  const appShellRef = useRef(null);
   const helperInsightsScrollRef = useRef({ top: 0 });
   const suppressHelperInsightsAutoHideRef = useRef(false);
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
@@ -792,6 +797,74 @@ export default function App() {
       guestToken: workspaceGuestToken || undefined,
     });
   }
+
+  useGSAP(
+    () => {
+      if (!appShellRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+      }
+
+      gsap.fromTo(
+        ".motion-surface",
+        { autoAlpha: 0, y: 10 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.28,
+          ease: "power2.out",
+          clearProps: "opacity,visibility,transform",
+        }
+      );
+      gsap.fromTo(
+        ".content > .grid > .panel, .content > .panel, .job-list-item, .card, .metric, .helper-insight-toggle, .mobile-helper-button",
+        { autoAlpha: 0, y: 12 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.34,
+          ease: "power2.out",
+          stagger: 0.035,
+          clearProps: "opacity,visibility,transform",
+        }
+      );
+    },
+    {
+      scope: appShellRef,
+      dependencies: [page, selectedSessionId, selectedResumeId, selectedThreadId, isDesktopViewport],
+      revertOnUpdate: true,
+    }
+  );
+
+  useGSAP(
+    () => {
+      if (!appShellRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+      }
+
+      gsap.fromTo(
+        ".chat-log .chat-message:last-child, .chat-log .timeline-event:last-child",
+        { autoAlpha: 0, y: 8, scale: 0.992 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.22,
+          ease: "power2.out",
+          clearProps: "opacity,visibility,transform",
+        }
+      );
+    },
+    {
+      scope: appShellRef,
+      dependencies: [
+        selectedThread?.messages?.length || 0,
+        agentThread?.messages?.length || 0,
+        sendingChat,
+        sendingAgentChat,
+      ],
+      revertOnUpdate: true,
+    }
+  );
 
   function syncHelperInsightsVisibility(chatLog, { forceVisible = false } = {}) {
     if (!chatLog) {
@@ -3163,7 +3236,7 @@ export default function App() {
     .slice(0, 2) || "JP";
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={appShellRef}>
       <div
         className={`shell ${showDesktopAgentRail ? "with-desktop-agent-rail" : ""} ${
           showDesktopAgentRail && isDesktopAgentCollapsed ? "desktop-agent-rail-collapsed" : ""
@@ -3556,7 +3629,7 @@ export default function App() {
           </div>
         </aside>
 
-        <main className="content">
+        <main className="content motion-surface">
         {!(page === "Agent" && !isDesktopViewport) ? (
           <div className="mobile-topbar">
             <button
