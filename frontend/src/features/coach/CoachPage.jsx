@@ -15,7 +15,7 @@ export function CoachPage({ jobs, resumes, annotations, thread, messages, messag
       <section className="hero-panel">
         <p className="eyebrow">Career Coach</p>
         <h2>Strategy view, not a permanent chat rail.</h2>
-        <p>{GROUNDING_COPY.coach} Advice should explain what it used and what still needs your judgment.</p>
+        <p>{GROUNDING_COPY.coach} Use it after your jobs, resumes, and next steps are current.</p>
       </section>
 
       <div className="strategy-grid">

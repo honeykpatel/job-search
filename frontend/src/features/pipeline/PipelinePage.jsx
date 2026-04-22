@@ -20,9 +20,9 @@ export function PipelinePage({ jobs, resumes, annotations, onApplicationUpdate, 
         title="Pipeline"
         description="Grouped by stage so status, next action, and due date stay visible."
       />
-      <div className="pipeline-board">
+      <div className="pipeline-board" role="list">
         {grouped.map(({ stage, jobs: stageJobs }) => (
-          <section key={stage} className="pipeline-column" aria-label={`${stage} jobs`}>
+          <section key={stage} className="pipeline-column" aria-label={`${stage} jobs`} role="listitem">
             <div className="pipeline-column__header">
               <h3>{stage}</h3>
               <Badge tone="neutral">{stageJobs.length}</Badge>

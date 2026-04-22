@@ -9,7 +9,7 @@ import { JobsPage } from "./features/jobs/JobsPage";
 import { PipelinePage } from "./features/pipeline/PipelinePage";
 import { ResumesPage } from "./features/resumes/ResumesPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
-import { LoadingState } from "./shared/components/feedback/LoadingState";
+import { PageSkeleton } from "./shared/components/feedback/Skeleton";
 import { apiRequest, createWorkspaceApi } from "./shared/lib/api";
 import { useJobAnnotations } from "./shared/hooks/useJobAnnotations";
 import { getJobId, normalizeStatus } from "./shared/utils/format";
@@ -398,7 +398,7 @@ export default function App() {
 
   const renderPage = () => {
     if (savedSearchesQuery.isLoading || resumesQuery.isLoading || recentJobsQuery.isLoading) {
-      return <LoadingState />;
+      return <PageSkeleton variant={page === "jobs" ? "jobs" : "default"} />;
     }
 
     if (page === "jobs") {

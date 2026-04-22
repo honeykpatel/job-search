@@ -52,7 +52,7 @@ export function JobsPage({
   return (
     <div className="jobs-layout">
       <aside className="jobs-control-panel" aria-label="Search and saved searches">
-        <Panel>
+        <Panel className="search-panel">
           <SectionHeader title="Discover jobs" description="Search, save, then review one job at a time." />
           <form className="stack-form" onSubmit={submitSearch}>
             <Field label="Role or keyword">
@@ -82,7 +82,7 @@ export function JobsPage({
           </form>
         </Panel>
 
-        <Panel>
+        <Panel className="saved-search-panel">
           <SectionHeader title="Saved Searches" description="Reusable searches for roles, locations, and work styles." />
           {savedSearches.length ? (
             <div className="saved-search-list">
@@ -144,7 +144,7 @@ export function JobsPage({
           <>
             <JobWorkspaceHeader job={selectedJob} />
             <Panel className="job-workspace__controls">
-              <Field label="Resume for this job">
+              <Field label="Resume">
                 <select value={selectedResumeId || ""} onChange={(event) => onResumeSelect(event.target.value ? Number(event.target.value) : "")}>
                   <option value="">Choose resume</option>
                   {resumes.map((resume) => (
@@ -154,7 +154,7 @@ export function JobsPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Pipeline status">
+              <Field label="Status">
                 <select
                   value={normalizeStatus(selectedJob.application_status)}
                   onChange={(event) => onApplicationUpdate(selectedJob, { status: event.target.value, resume_id: selectedResumeId || selectedJob.resume_id || null })}
@@ -173,7 +173,7 @@ export function JobsPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Why save this?">
+              <Field label="Reason">
                 <select value={annotation.saveReason} onChange={(event) => onAnnotationUpdate(jobId, { saveReason: event.target.value })}>
                   <option value="">Not set</option>
                   {SAVE_REASONS.map((reason) => (
@@ -181,7 +181,7 @@ export function JobsPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Next Step">
+              <Field label="Next step">
                 <input value={annotation.nextStep} onChange={(event) => onAnnotationUpdate(jobId, { nextStep: event.target.value })} placeholder="Follow up, tailor resume..." />
               </Field>
               <Field label="Due date">
@@ -193,7 +193,7 @@ export function JobsPage({
               <div className="job-workspace__main">
                 <JobInsights insights={jobCoach.insights} loading={jobCoach.insightsLoading} onRefresh={jobCoach.onRefreshInsights} resumeSelected={Boolean(selectedResumeId)} />
                 <Panel>
-                  <SectionHeader title="Job description" description="Read the original posting before tailoring." />
+                  <SectionHeader title="Job description" description="Original posting, formatted for reading." />
                   <p className="long-copy">{compactText(selectedJob.description, "No detailed job description was provided by the source.")}</p>
                   {selectedJob.url ? (
                     <Button asChild variant="ghost" size="sm">
@@ -204,7 +204,7 @@ export function JobsPage({
                   ) : null}
                 </Panel>
                 <Panel>
-                  <SectionHeader title="Notes" description="Private notes for this opportunity." />
+                  <SectionHeader title="Notes" description="Private notes for this opportunity. Saved when you leave the field." />
                   <textarea
                     rows={4}
                     value={notesDraft}
