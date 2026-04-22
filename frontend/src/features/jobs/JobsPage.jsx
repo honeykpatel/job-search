@@ -1,4 +1,5 @@
-import { ArrowUpRight, Bot, RefreshCcw, Search, Send, Sparkles } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { ArrowUpRight, Bot, RefreshCcw, Search, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { EmptyState } from "../../shared/components/feedback/EmptyState";
 import { Button } from "../../shared/components/ui/Button";
@@ -36,6 +37,7 @@ export function JobsPage({
   jobCoach,
 }) {
   const [searchForm, setSearchForm] = useState({ job_title: "", location: "", work_style: "remote", k: 10 });
+  const [discoverOpen, setDiscoverOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const jobId = getJobId(selectedJob);
   const annotation = { priority: "Medium", nextStep: "", dueDate: "", saveReason: "", ...(annotations[jobId] || {}) };
@@ -47,43 +49,97 @@ export function JobsPage({
   function submitSearch(event) {
     event.preventDefault();
     onSearch(searchForm);
+    setDiscoverOpen(false);
   }
 
   return (
     <div className="jobs-layout">
-      <aside className="jobs-control-panel" aria-label="Search and saved searches">
-        <Panel className="search-panel">
-          <SectionHeader title="Discover jobs" description="Search, save, then review one job at a time." />
-          <form className="stack-form" onSubmit={submitSearch}>
-            <Field label="Role or keyword">
-              <input value={searchForm.job_title} onChange={(event) => setSearchForm({ ...searchForm, job_title: event.target.value })} placeholder="Product designer, AI engineer..." />
-            </Field>
-            <Field label="Location">
-              <input value={searchForm.location} onChange={(event) => setSearchForm({ ...searchForm, location: event.target.value })} placeholder="Toronto, Remote..." />
-            </Field>
-            <div className="form-grid two">
-              <Field label="Work style">
-                <select value={searchForm.work_style} onChange={(event) => setSearchForm({ ...searchForm, work_style: event.target.value })}>
-                  {WORK_STYLES.map((style) => (
-                    <option key={style} value={style}>
-                      {style}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Count">
-                <input type="number" min="1" max="50" value={searchForm.k} onChange={(event) => setSearchForm({ ...searchForm, k: Number(event.target.value) })} />
-              </Field>
-            </div>
-            <Button type="submit" disabled={searchPending}>
-              <Search size={16} />
-              {searchPending ? "Searching..." : "Search jobs"}
-            </Button>
-          </form>
-        </Panel>
+      <section className="job-list-panel" aria-label="Job list">
+        <div className="jobs-page-heading">
+          <div>
+            <p className="eyebrow">Review queue</p>
+            <h2>{jobs.length} jobs</h2>
+            <p>Choose one role, then review fit, actions, notes, and coaching in the workspace.</p>
+          </div>
+          <Dialog.Root open={discoverOpen} onOpenChange={setDiscoverOpen}>
+            <Dialog.Trigger asChild>
+              <Button type="button">
+                <Search size={16} />
+                Discover new jobs
+              </Button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="dialog-overlay" />
+              <Dialog.Content className="dialog-content" aria-describedby="discover-description">
+                <div className="dialog-header">
+                  <div>
+                    <p className="eyebrow">Discover</p>
+                    <Dialog.Title>Find jobs to review</Dialog.Title>
+                    <Dialog.Description id="discover-description">
+                      Add only the filters that matter. Results will be saved as a Saved Search.
+                    </Dialog.Description>
+                  </div>
+                  <Dialog.Close asChild>
+                    <button className="icon-button" type="button" aria-label="Close discover jobs dialog">
+                      <X size={18} />
+                    </button>
+                  </Dialog.Close>
+                </div>
+                <form className="stack-form" onSubmit={submitSearch}>
+                  <Field label="Role or keyword">
+                    <input
+                      value={searchForm.job_title}
+                      onChange={(event) => setSearchForm({ ...searchForm, job_title: event.target.value })}
+                      placeholder="Product designer, AI engineer..."
+                    />
+                  </Field>
+                  <Field label="Location">
+                    <input
+                      value={searchForm.location}
+                      onChange={(event) => setSearchForm({ ...searchForm, location: event.target.value })}
+                      placeholder="Toronto, Remote..."
+                    />
+                  </Field>
+                  <div className="form-grid two">
+                    <Field label="Work style">
+                      <select value={searchForm.work_style} onChange={(event) => setSearchForm({ ...searchForm, work_style: event.target.value })}>
+                        {WORK_STYLES.map((style) => (
+                          <option key={style} value={style}>
+                            {style}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Count">
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={searchForm.k}
+                        onChange={(event) => setSearchForm({ ...searchForm, k: Number(event.target.value) })}
+                      />
+                    </Field>
+                  </div>
+                  <div className="dialog-actions">
+                    <Dialog.Close asChild>
+                      <Button type="button" variant="ghost">Cancel</Button>
+                    </Dialog.Close>
+                    <Button type="submit" disabled={searchPending}>
+                      <Sparkles size={16} />
+                      {searchPending ? "Searching..." : "Search and save"}
+                    </Button>
+                  </div>
+                </form>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </div>
 
-        <Panel className="saved-search-panel">
-          <SectionHeader title="Saved Searches" description="Reusable searches for roles, locations, and work styles." />
+        <div className="saved-search-strip" aria-label="Saved Searches">
+          <div className="saved-search-strip__header">
+            <strong>Saved Searches</strong>
+            <span>{savedSearches.length} total</span>
+          </div>
           {savedSearches.length ? (
             <div className="saved-search-list">
               {savedSearches.map((session) => (
@@ -103,16 +159,8 @@ export function JobsPage({
           ) : (
             <EmptyState title="No saved searches yet" description="Search for a role to create a Saved Search." />
           )}
-        </Panel>
-      </aside>
-
-      <section className="job-list-panel" aria-label="Job list">
-        <div className="list-header">
-          <div>
-            <p className="eyebrow">Review queue</p>
-            <h2>{jobs.length} jobs</h2>
-          </div>
         </div>
+
         {jobs.length ? (
           <div className="job-list">
             {jobs.map((job) => {
@@ -243,27 +291,33 @@ function JobInsights({ insights, loading, onRefresh, resumeSelected }) {
 
   return (
     <Panel className="ai-insights">
-      <SectionHeader
-        eyebrow="AI guidance"
-        title="Resume Fit"
-        description={GROUNDING_COPY.job}
-        action={
-          <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading || !resumeSelected}>
-            <RefreshCcw size={15} /> Refresh
-          </Button>
-        }
-      />
+      <div className="ai-insights__header">
+        <div>
+          <p className="eyebrow">AI guidance</p>
+          <h3>Resume Fit</h3>
+          <p>{GROUNDING_COPY.job}</p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading || !resumeSelected}>
+          <RefreshCcw size={15} /> Refresh
+        </Button>
+      </div>
       {!resumeSelected ? <p className="inline-warning">Choose a resume to generate grounded Job Coach insights.</p> : null}
       <div className="fit-summary">
-        <Badge tone={fit.tone}>{fit.label}</Badge>
-        <p>{fit.explanation}</p>
+        <div className="fit-summary__score">
+          <span>Fit</span>
+          <strong>{fit.label}</strong>
+        </div>
+        <div>
+          <Badge tone={fit.tone}>{fit.label}</Badge>
+          <p>{fit.explanation}</p>
+          <p className="metadata">Last generated: {insights?.generated_at ? formatDate(insights.generated_at) : loading ? "Generating..." : "Not generated yet"}</p>
+        </div>
       </div>
-      <p className="metadata">Last generated: {insights?.generated_at ? formatDate(insights.generated_at) : loading ? "Generating..." : "Not generated yet"}</p>
       <div className="insight-grid">
         <InsightBlock title="Key Requirements" items={requirements} empty="Generate insights to list requirements." />
         <InsightBlock title="Skill Gaps" items={gaps} empty="No major gaps detected yet." />
         <InsightBlock title="Tailoring Advice" items={insights?.tailoring_advice || insights?.suggestions || []} empty="Generate insights to get tailoring advice." />
-        <div className="insight-block">
+        <div className="insight-block insight-block--draft">
           <h4>Draft Intro</h4>
           <p>{draft || "Generate insights to create a short starter note."}</p>
           {draft ? <Button type="button" variant="secondary" size="sm" onClick={() => navigator.clipboard?.writeText(draft)}>Copy</Button> : null}
