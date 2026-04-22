@@ -89,6 +89,7 @@ input,
 select,
 textarea {
   width: 100%;
+  min-width: 0;
   min-height: 44px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -278,6 +279,7 @@ a:focus-visible {
 
 .workspace-main-wrap {
   min-width: 0;
+  overflow-x: clip;
 }
 
 .topbar {
@@ -371,6 +373,7 @@ a:focus-visible {
 
 .ui-panel,
 .hero-panel {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 22px;
   background: color-mix(in srgb, var(--surface), transparent 4%);
@@ -418,6 +421,13 @@ a:focus-visible {
 .resume-card__footer {
   justify-content: space-between;
   margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.section-header > div,
+.section-header__action,
+.list-header > div {
+  min-width: 0;
 }
 
 .section-header h2,
@@ -528,6 +538,18 @@ a:focus-visible {
   grid-template-columns: minmax(236px, 300px) minmax(280px, 360px) minmax(0, 1fr);
   gap: 0.85rem;
   align-items: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.jobs-layout > *,
+.jobs-control-panel > *,
+.job-list-panel,
+.job-workspace,
+.job-workspace > *,
+.job-workspace__grid > *,
+.job-workspace__main > * {
+  min-width: 0;
 }
 
 .jobs-control-panel,
@@ -555,6 +577,19 @@ a:focus-visible {
 
 .job-row__main {
   min-width: 0;
+}
+
+.job-row__main strong,
+.job-row__main small,
+.saved-search-list strong,
+.saved-search-list span,
+.job-workspace__header h2,
+.job-workspace__header p,
+.insight-block,
+.coach-message,
+.long-copy {
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .job-row__meta {
@@ -590,7 +625,7 @@ a:focus-visible {
   top: 96px;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.7rem;
   margin-bottom: 1rem;
   backdrop-filter: blur(14px);
@@ -598,7 +633,7 @@ a:focus-visible {
 
 .job-workspace__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
   gap: 0.85rem;
   align-items: start;
 }
@@ -679,6 +714,7 @@ a:focus-visible {
   display: grid;
   gap: 0.8rem;
   max-height: calc(100dvh - 208px);
+  overflow: hidden;
 }
 
 .coach-transcript {
@@ -732,12 +768,14 @@ a:focus-visible {
   gap: 0.5rem;
   align-items: end;
   margin-top: auto;
+  min-width: 0;
 }
 
 .coach-input textarea {
   min-height: 44px;
   max-height: 132px;
   resize: none;
+  min-width: 0;
 }
 
 .thinking-line {
@@ -902,6 +940,7 @@ a:focus-visible {
 .field {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .field__label {
@@ -1138,7 +1177,7 @@ a:focus-visible {
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1460px) {
   .jobs-layout {
     grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   }
@@ -1152,6 +1191,12 @@ a:focus-visible {
     grid-column: 1 / -1;
   }
 
+  .job-workspace__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 310px);
+  }
+}
+
+@media (max-width: 1180px) {
   .pipeline-board {
     grid-template-columns: repeat(2, minmax(260px, 1fr));
   }
