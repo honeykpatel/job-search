@@ -1,39 +1,41 @@
 import { CalendarClock } from "lucide-react";
 import { EmptyState } from "../../shared/components/feedback/EmptyState";
 import { Badge } from "../../shared/components/ui/Badge";
-import { Button } from "../../shared/components/ui/Button";
 import { Panel, SectionHeader } from "../../shared/components/ui/Panel";
 import { Field } from "../../shared/components/forms/Field";
+import { listItemProps, motion, revealProps, useReducedMotion } from "../../shared/lib/motion";
 import { PIPELINE_STAGES, PRIORITIES } from "../../shared/constants/product";
 import { formatDate, getJobCompany, getJobId, getJobTitle, normalizeStatus } from "../../shared/utils/format";
 
 export function PipelinePage({ jobs, resumes, annotations, onApplicationUpdate, onAnnotationUpdate, onSelectJob }) {
+  const reduceMotion = useReducedMotion();
   const grouped = PIPELINE_STAGES.map((stage) => ({
     stage,
     jobs: jobs.filter((job) => normalizeStatus(job.application_status) === stage),
   }));
 
   return (
-    <div className="page-stack">
+    <motion.div className="page-stack" {...revealProps(reduceMotion)}>
       <SectionHeader
         eyebrow="Track"
         title="Pipeline"
         description="Grouped by stage so status, next action, and due date stay visible."
       />
       <div className="pipeline-board" role="list">
-        {grouped.map(({ stage, jobs: stageJobs }) => (
-          <section key={stage} className="pipeline-column" aria-label={`${stage} jobs`} role="listitem">
+        {grouped.map(({ stage, jobs: stageJobs }, columnIndex) => (
+          <motion.section key={stage} className="pipeline-column" aria-label={`${stage} jobs`} role="listitem" {...listItemProps(reduceMotion, columnIndex)}>
             <div className="pipeline-column__header">
               <h3>{stage}</h3>
               <Badge tone="neutral">{stageJobs.length}</Badge>
             </div>
             {stageJobs.length ? (
-              stageJobs.map((job) => {
+              stageJobs.map((job, index) => {
                 const id = getJobId(job);
                 const annotation = { priority: "Medium", nextStep: "", dueDate: "", ...(annotations[id] || {}) };
                 const resume = resumes.find((item) => Number(item.id) === Number(job.resume_id));
                 return (
-                  <Panel key={id} className="pipeline-card">
+                  <motion.div key={id} {...listItemProps(reduceMotion, index)}>
+                    <Panel className="pipeline-card">
                     <button type="button" className="pipeline-card__title" onClick={() => onSelectJob(job)}>
                       <span>{getJobCompany(job)}</span>
                       <strong>{getJobTitle(job)}</strong>
@@ -77,15 +79,16 @@ export function PipelinePage({ jobs, resumes, annotations, onApplicationUpdate, 
                         </Field>
                       </div>
                     </details>
-                  </Panel>
+                    </Panel>
+                  </motion.div>
                 );
               })
             ) : (
               <EmptyState title={`No ${stage.toLowerCase()} jobs`} description="Move jobs into this stage from Jobs or another pipeline card." icon={CalendarClock} />
             )}
-          </section>
+          </motion.section>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

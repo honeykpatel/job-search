@@ -4,9 +4,11 @@ import { Button } from "../../shared/components/ui/Button";
 import { Badge } from "../../shared/components/ui/Badge";
 import { Panel, SectionHeader } from "../../shared/components/ui/Panel";
 import { Field } from "../../shared/components/forms/Field";
+import { listItemProps, motion, revealProps, useReducedMotion } from "../../shared/lib/motion";
 import { formatDate } from "../../shared/utils/format";
 
 export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadPending, metadata, updateMetadata }) {
+  const reduceMotion = useReducedMotion();
   function jobsUsingResume(resumeId) {
     return jobs.filter((job) => Number(job.resume_id) === Number(resumeId)).length;
   }
@@ -21,13 +23,14 @@ export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadP
   }
 
   return (
-    <div className="page-stack">
+    <motion.div className="page-stack" {...revealProps(reduceMotion)}>
       <SectionHeader
         eyebrow="Tailor"
         title="Resumes"
         description="Keep a focused resume library and choose the right resume before asking for AI guidance."
       />
-      <Panel className="upload-panel">
+      <motion.div {...revealProps(reduceMotion, 0.04)}>
+        <Panel className="upload-panel">
         <form className="upload-form" onSubmit={onSubmit}>
           <Field label="Upload resume" hint="PDF, DOCX, or text files work best when they contain selectable text.">
             <input name="resumeFile" type="file" accept=".pdf,.doc,.docx,.txt" />
@@ -36,12 +39,14 @@ export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadP
             <FileUp size={16} /> {uploadPending ? "Uploading..." : "Upload resume"}
           </Button>
         </form>
-      </Panel>
+        </Panel>
+      </motion.div>
 
       {resumes.length ? (
         <div className="resume-grid">
-          {resumes.map((resume) => (
-            <Panel key={resume.id} className="resume-card">
+          {resumes.map((resume, index) => (
+            <motion.div key={resume.id} {...listItemProps(reduceMotion, index)}>
+              <Panel className="resume-card">
               <div>
                 <p className="eyebrow">Resume</p>
                 <h3>{resume.filename}</h3>
@@ -73,12 +78,13 @@ export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadP
                   <Trash2 size={15} /> Delete
                 </Button>
               </div>
-            </Panel>
+              </Panel>
+            </motion.div>
           ))}
         </div>
       ) : (
         <EmptyState title="No resumes uploaded" description="Upload a resume to unlock grounded Resume Fit, Skill Gaps, and Draft Intro guidance." icon={FileUp} />
       )}
-    </div>
+    </motion.div>
   );
 }

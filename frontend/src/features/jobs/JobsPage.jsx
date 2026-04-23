@@ -18,6 +18,7 @@ import {
   normalizeStatus,
   relativeDate,
 } from "../../shared/utils/format";
+import { listItemProps, motion, revealProps, scaleInProps, useReducedMotion } from "../../shared/lib/motion";
 
 export function JobsPage({
   jobs,
@@ -36,6 +37,7 @@ export function JobsPage({
   onAnnotationUpdate,
   jobCoach,
 }) {
+  const reduceMotion = useReducedMotion();
   const [searchForm, setSearchForm] = useState({ job_title: "", location: "", work_style: "remote", k: 10 });
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
@@ -54,8 +56,8 @@ export function JobsPage({
   }
 
   return (
-    <div className="jobs-layout">
-      <section className="job-list-panel" aria-label="Job list">
+    <motion.div className="jobs-layout" {...revealProps(reduceMotion)}>
+      <motion.section className="job-list-panel" aria-label="Job list" {...revealProps(reduceMotion, 0.02)}>
         <div className="jobs-page-heading">
           <div>
             <p className="eyebrow">Review queue</p>
@@ -71,7 +73,8 @@ export function JobsPage({
             </Dialog.Trigger>
             <Dialog.Portal>
               <Dialog.Overlay className="dialog-overlay" />
-              <Dialog.Content className="dialog-content" aria-describedby="discover-description">
+              <Dialog.Content asChild aria-describedby="discover-description">
+                <motion.div className="dialog-content" {...scaleInProps(reduceMotion)}>
                 <div className="dialog-header">
                   <div>
                     <p className="eyebrow">Discover</p>
@@ -131,6 +134,7 @@ export function JobsPage({
                     </Button>
                   </div>
                 </form>
+                </motion.div>
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
@@ -143,18 +147,19 @@ export function JobsPage({
           </div>
           {savedSearches.length ? (
             <div className="saved-search-list">
-              {savedSearches.map((session) => (
-                <button
+              {savedSearches.map((session, index) => (
+                <motion.button
                   key={session.id}
                   type="button"
                   className={Number(selectedSearchId) === Number(session.id) ? "is-active" : ""}
                   onClick={() => onSavedSearchSelect(session.id)}
+                  {...listItemProps(reduceMotion, index)}
                 >
                   <strong>{session.job_title || "Untitled search"}</strong>
                   <span>
                     {session.location || "Any location"} - {session.job_count || 0} jobs
                   </span>
-                </button>
+                </motion.button>
               ))}
             </div>
           ) : (
@@ -164,12 +169,12 @@ export function JobsPage({
 
         {jobs.length ? (
           <div className="job-list">
-            {jobs.map((job) => {
+            {jobs.map((job, index) => {
               const id = getJobId(job);
               const active = id === jobId;
               const meta = { priority: "Medium", ...(annotations[id] || {}) };
               return (
-                <button key={id} type="button" className={`job-row ${active ? "is-active" : ""}`} onClick={() => onJobSelect(job)}>
+                <motion.button key={id} type="button" className={`job-row ${active ? "is-active" : ""}`} onClick={() => onJobSelect(job)} layout {...listItemProps(reduceMotion, index)}>
                   <span className="job-row__main">
                     <strong>{getJobTitle(job)}</strong>
                     <small>{getJobCompany(job)} - {getJobLocation(job)}</small>
@@ -179,16 +184,16 @@ export function JobsPage({
                     <Badge tone={meta.priority === "High" ? "strong" : "neutral"}>{meta.priority}</Badge>
                     <Badge tone="info">{normalizeStatus(job.application_status)}</Badge>
                   </span>
-                </button>
+                </motion.button>
               );
             })}
           </div>
         ) : (
           <EmptyState title="No jobs to review" description="Run a search or choose a Saved Search." />
         )}
-      </section>
+      </motion.section>
 
-      <section className="job-workspace" aria-label="Selected job workspace">
+      <motion.section className="job-workspace" aria-label="Selected job workspace" {...revealProps(reduceMotion, 0.06)}>
         {selectedJob ? (
           <>
             <JobWorkspaceHeader job={selectedJob} />
@@ -259,7 +264,7 @@ export function JobsPage({
             </Panel>
 
             <div className="job-workspace__grid">
-              <div className="job-workspace__main">
+              <motion.div className="job-workspace__main" key={`${jobId}-${workspaceTab}`} {...scaleInProps(reduceMotion)}>
                 {workspaceTab === "overview" ? (
                   <JobOverview job={selectedJob} annotation={annotation} setWorkspaceTab={setWorkspaceTab} />
                 ) : null}
@@ -292,9 +297,10 @@ export function JobsPage({
                   </Panel>
                 ) : null}
                 {workspaceTab === "coach" ? <JobCoachPanel {...jobCoach} selectedJob={selectedJob} selectedResumeId={selectedResumeId} /> : null}
-              </div>
+              </motion.div>
               {workspaceTab !== "coach" ? (
-                <Panel className="job-side-summary" as="aside">
+                <motion.div {...revealProps(reduceMotion, 0.1)}>
+                  <Panel className="job-side-summary" as="aside">
                   <SectionHeader title="Next action" description="Keep the role moving." />
                   <dl className="definition-list">
                     <div>
@@ -317,15 +323,16 @@ export function JobsPage({
                   <Button type="button" variant="secondary" onClick={() => setWorkspaceTab("coach")}>
                     Open Job Coach
                   </Button>
-                </Panel>
+                  </Panel>
+                </motion.div>
               ) : null}
             </div>
           </>
         ) : (
           <EmptyState title="Select a job to start" description="The workspace will show job details, Resume Fit, Skill Gaps, and the Job Coach." />
         )}
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
