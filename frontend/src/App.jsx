@@ -12,6 +12,7 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { PageSkeleton } from "./shared/components/feedback/Skeleton";
 import { apiRequest, createWorkspaceApi } from "./shared/lib/api";
 import { useJobAnnotations } from "./shared/hooks/useJobAnnotations";
+import { useResumeMetadata } from "./shared/hooks/useResumeMetadata";
 import { getJobId, normalizeStatus } from "./shared/utils/format";
 
 const DEFAULT_PAGE = "home";
@@ -35,6 +36,8 @@ export default function App() {
   const queryClient = useQueryClient();
   const annotations = useJobAnnotations((state) => state.annotations);
   const updateAnnotation = useJobAnnotations((state) => state.updateAnnotation);
+  const resumeMetadata = useResumeMetadata((state) => state.metadata);
+  const updateResumeMetadata = useResumeMetadata((state) => state.updateMetadata);
 
   const [page, setPage] = useState(DEFAULT_PAGE);
   const [theme, setTheme] = useState(() => window.localStorage.getItem("jobpilot-theme") || "dark");
@@ -466,6 +469,8 @@ export default function App() {
           uploadResume={(file) => uploadResumeMutation.mutate(file)}
           deleteResume={(resumeId) => deleteResumeMutation.mutate(resumeId)}
           uploadPending={uploadResumeMutation.isPending}
+          metadata={resumeMetadata}
+          updateMetadata={updateResumeMetadata}
         />
       );
     }

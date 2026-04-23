@@ -679,11 +679,82 @@ a:focus-visible {
   backdrop-filter: blur(14px);
 }
 
+.job-workspace-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.55rem;
+}
+
+.job-workspace-tabs button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.45rem 0.8rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.job-workspace-tabs button.is-active {
+  border-color: color-mix(in srgb, var(--brand), transparent 45%);
+  background: var(--brand-soft);
+  color: var(--text);
+}
+
 .job-workspace__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   gap: 1rem;
   align-items: start;
+}
+
+.job-overview-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.job-brief-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.job-brief-grid div,
+.next-action-callout {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-2), transparent 24%);
+  padding: 1rem;
+}
+
+.job-brief-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.job-brief-grid strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1.08rem;
+}
+
+.next-action-callout h3 {
+  margin: 0.15rem 0 0.35rem;
+  font-size: clamp(1.25rem, 2vw, 1.85rem);
+  letter-spacing: -0.05em;
+}
+
+.next-action-callout p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
 }
 
 .job-workspace__main {
@@ -888,6 +959,11 @@ a:focus-visible {
   overflow: hidden;
 }
 
+.job-side-summary {
+  position: sticky;
+  top: 188px;
+}
+
 .coach-transcript {
   display: flex;
   flex-direction: column;
@@ -1008,6 +1084,23 @@ a:focus-visible {
   gap: 0.65rem;
 }
 
+.pipeline-edit {
+  border-top: 1px solid var(--line);
+  margin-top: 0.8rem;
+  padding-top: 0.65rem;
+}
+
+.pipeline-edit summary,
+.career-coach-chat summary {
+  cursor: pointer;
+  color: var(--brand);
+  font-weight: 900;
+}
+
+.pipeline-edit summary {
+  min-height: 36px;
+}
+
 .definition-list {
   display: grid;
   gap: 0.45rem;
@@ -1053,6 +1146,28 @@ a:focus-visible {
 
 .career-coach-chat {
   max-width: 980px;
+}
+
+.career-coach-chat {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.career-coach-chat > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface), transparent 8%);
+  padding: 1rem;
+}
+
+.career-coach-chat > summary small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .check-list,
@@ -1480,7 +1595,8 @@ a:focus-visible {
   .job-workspace__controls,
   .insight-grid,
   .form-grid.two,
-  .upload-form {
+  .upload-form,
+  .job-brief-grid {
     grid-template-columns: 1fr;
   }
 

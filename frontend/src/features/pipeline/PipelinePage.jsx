@@ -52,28 +52,31 @@ export function PipelinePage({ jobs, resumes, annotations, onApplicationUpdate, 
                         <dd>{formatDate(annotation.dueDate)}</dd>
                       </div>
                     </dl>
-                    <div className="pipeline-card__controls">
-                      <Field label="Status">
-                        <select value={stage} onChange={(event) => onApplicationUpdate(job, { status: event.target.value, resume_id: job.resume_id || null })}>
-                          {PIPELINE_STAGES.map((option) => (
-                            <option key={option}>{option}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Priority">
-                        <select value={annotation.priority} onChange={(event) => onAnnotationUpdate(id, { priority: event.target.value })}>
-                          {PRIORITIES.map((priority) => (
-                            <option key={priority}>{priority}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Next Step">
-                        <input value={annotation.nextStep} onChange={(event) => onAnnotationUpdate(id, { nextStep: event.target.value })} />
-                      </Field>
-                      <Field label="Due">
-                        <input type="date" value={annotation.dueDate} onChange={(event) => onAnnotationUpdate(id, { dueDate: event.target.value })} />
-                      </Field>
-                    </div>
+                    <details className="pipeline-edit">
+                      <summary>Edit next step</summary>
+                      <div className="pipeline-card__controls">
+                        <Field label="Status">
+                          <select value={stage} onChange={(event) => onApplicationUpdate(job, { status: event.target.value, resume_id: job.resume_id || null })}>
+                            {PIPELINE_STAGES.map((option) => (
+                              <option key={option}>{option}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Priority">
+                          <select value={annotation.priority} onChange={(event) => onAnnotationUpdate(id, { priority: event.target.value })}>
+                            {PRIORITIES.map((priority) => (
+                              <option key={priority}>{priority}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Next Step">
+                          <input value={annotation.nextStep} onChange={(event) => onAnnotationUpdate(id, { nextStep: event.target.value })} />
+                        </Field>
+                        <Field label="Due">
+                          <input type="date" value={annotation.dueDate} onChange={(event) => onAnnotationUpdate(id, { dueDate: event.target.value })} />
+                        </Field>
+                      </div>
+                    </details>
                   </Panel>
                 );
               })

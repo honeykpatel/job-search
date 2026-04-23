@@ -38,3 +38,16 @@ The green theme has been removed from the shared design tokens. The app now uses
 3. Make Coach page primarily a weekly plan and pipeline review, with chat collapsed by default.
 4. Add resume target-role metadata and show "best used for" on every resume card.
 5. Add one consistent AI output header with: source data, last generated, refresh state, and confidence label.
+
+## Resolution pass
+
+Implemented in the follow-up UI pass:
+
+- Jobs workspace now uses section tabs: Overview, Fit, Description, Notes, and Coach.
+- Jobs Overview now presents the next action first, reducing scan cost.
+- Job Coach is no longer shown beside every job section; it opens as its own workspace tab.
+- Pipeline edit controls are collapsed behind an "Edit next step" disclosure.
+- Career Coach chat is collapsed by default so strategy content leads the page.
+- Resume cards now include local target-role metadata and readiness signals.
+- Settings now explains why profile data matters for AI grounding.
+- Sidebar workflow chips were removed to reduce persistent navigation noise.

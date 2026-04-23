@@ -6,16 +6,19 @@ export function SettingsPage({ profile, account, onProfileSave, onAccountSave, p
   return (
     <div className="settings-grid">
       <Panel>
-        <SectionHeader title="Profile" description="Used to personalize grounded AI guidance." />
+        <SectionHeader
+          title="AI grounding profile"
+          description="This tells Career Coach what background, goals, and constraints to use. Better context means less generic advice."
+        />
         <form className="stack-form" onSubmit={(event) => { event.preventDefault(); onProfileSave(); }}>
-          <Field label="Summary">
+          <Field label="Career summary" hint="Include target roles, strongest skills, industries, location constraints, and anything the AI should not assume.">
             <textarea rows={6} value={profileDraft.summary_text ?? profile?.summary_text ?? ""} onChange={(event) => setProfileDraft({ ...profileDraft, summary_text: event.target.value })} />
           </Field>
           <Button type="submit" disabled={saving}>Save profile</Button>
         </form>
       </Panel>
       <Panel>
-        <SectionHeader title="Account display" description="Shown in the sidebar and workspace header." />
+        <SectionHeader title="Account display" description="Shown in the sidebar and workspace header. This does not change your resume content." />
         <form className="stack-form" onSubmit={(event) => { event.preventDefault(); onAccountSave(); }}>
           <Field label="First name">
             <input value={accountDraft.first_name ?? account?.first_name ?? ""} onChange={(event) => setAccountDraft({ ...accountDraft, first_name: event.target.value })} />

@@ -39,6 +39,7 @@ export function JobsPage({
   const [searchForm, setSearchForm] = useState({ job_title: "", location: "", work_style: "remote", k: 10 });
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
+  const [workspaceTab, setWorkspaceTab] = useState("overview");
   const jobId = getJobId(selectedJob);
   const annotation = { priority: "Medium", nextStep: "", dueDate: "", saveReason: "", ...(annotations[jobId] || {}) };
 
@@ -191,6 +192,26 @@ export function JobsPage({
         {selectedJob ? (
           <>
             <JobWorkspaceHeader job={selectedJob} />
+            <div className="job-workspace-tabs" role="tablist" aria-label="Job workspace sections">
+              {[
+                ["overview", "Overview"],
+                ["fit", "Fit"],
+                ["description", "Description"],
+                ["notes", "Notes"],
+                ["coach", "Coach"],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={workspaceTab === id}
+                  className={workspaceTab === id ? "is-active" : ""}
+                  onClick={() => setWorkspaceTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <Panel className="job-workspace__controls">
               <Field label="Resume">
                 <select value={selectedResumeId || ""} onChange={(event) => onResumeSelect(event.target.value ? Number(event.target.value) : "")}>
@@ -239,30 +260,65 @@ export function JobsPage({
 
             <div className="job-workspace__grid">
               <div className="job-workspace__main">
-                <JobInsights insights={jobCoach.insights} loading={jobCoach.insightsLoading} onRefresh={jobCoach.onRefreshInsights} resumeSelected={Boolean(selectedResumeId)} />
-                <Panel>
-                  <SectionHeader title="Job description" description="Original posting, formatted for reading." />
-                  <p className="long-copy">{compactText(selectedJob.description, "No detailed job description was provided by the source.")}</p>
-                  {selectedJob.url ? (
-                    <Button asChild variant="ghost" size="sm">
-                      <a href={selectedJob.url} target="_blank" rel="noreferrer">
-                        Open source <ArrowUpRight size={15} />
-                      </a>
-                    </Button>
-                  ) : null}
-                </Panel>
-                <Panel>
-                  <SectionHeader title="Notes" description="Private notes for this opportunity. Saved when you leave the field." />
-                  <textarea
-                    rows={4}
-                    value={notesDraft}
-                    onChange={(event) => setNotesDraft(event.target.value)}
-                    onBlur={() => onApplicationUpdate(selectedJob, { notes: notesDraft, status: normalizeStatus(selectedJob.application_status), resume_id: selectedResumeId || selectedJob.resume_id || null })}
-                    placeholder="Add interview details, recruiter names, or tailoring ideas."
-                  />
-                </Panel>
+                {workspaceTab === "overview" ? (
+                  <JobOverview job={selectedJob} annotation={annotation} setWorkspaceTab={setWorkspaceTab} />
+                ) : null}
+                {workspaceTab === "fit" ? (
+                  <JobInsights insights={jobCoach.insights} loading={jobCoach.insightsLoading} onRefresh={jobCoach.onRefreshInsights} resumeSelected={Boolean(selectedResumeId)} />
+                ) : null}
+                {workspaceTab === "description" ? (
+                  <Panel>
+                    <SectionHeader title="Job description" description="Original posting, formatted for reading." />
+                    <p className="long-copy">{compactText(selectedJob.description, "No detailed job description was provided by the source.")}</p>
+                    {selectedJob.url ? (
+                      <Button asChild variant="ghost" size="sm">
+                        <a href={selectedJob.url} target="_blank" rel="noreferrer">
+                          Open source <ArrowUpRight size={15} />
+                        </a>
+                      </Button>
+                    ) : null}
+                  </Panel>
+                ) : null}
+                {workspaceTab === "notes" ? (
+                  <Panel>
+                    <SectionHeader title="Notes" description="Private notes for this opportunity. Saved when you leave the field." />
+                    <textarea
+                      rows={8}
+                      value={notesDraft}
+                      onChange={(event) => setNotesDraft(event.target.value)}
+                      onBlur={() => onApplicationUpdate(selectedJob, { notes: notesDraft, status: normalizeStatus(selectedJob.application_status), resume_id: selectedResumeId || selectedJob.resume_id || null })}
+                      placeholder="Add interview details, recruiter names, or tailoring ideas."
+                    />
+                  </Panel>
+                ) : null}
+                {workspaceTab === "coach" ? <JobCoachPanel {...jobCoach} selectedJob={selectedJob} selectedResumeId={selectedResumeId} /> : null}
               </div>
-              <JobCoachPanel {...jobCoach} selectedJob={selectedJob} selectedResumeId={selectedResumeId} />
+              {workspaceTab !== "coach" ? (
+                <Panel className="job-side-summary" as="aside">
+                  <SectionHeader title="Next action" description="Keep the role moving." />
+                  <dl className="definition-list">
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{normalizeStatus(selectedJob.application_status)}</dd>
+                    </div>
+                    <div>
+                      <dt>Priority</dt>
+                      <dd>{annotation.priority}</dd>
+                    </div>
+                    <div>
+                      <dt>Next step</dt>
+                      <dd>{annotation.nextStep || "Not set"}</dd>
+                    </div>
+                    <div>
+                      <dt>Due</dt>
+                      <dd>{annotation.dueDate || "Not set"}</dd>
+                    </div>
+                  </dl>
+                  <Button type="button" variant="secondary" onClick={() => setWorkspaceTab("coach")}>
+                    Open Job Coach
+                  </Button>
+                </Panel>
+              ) : null}
             </div>
           </>
         ) : (
@@ -270,6 +326,38 @@ export function JobsPage({
         )}
       </section>
     </div>
+  );
+}
+
+function JobOverview({ job, annotation, setWorkspaceTab }) {
+  return (
+    <Panel className="job-overview-panel">
+      <SectionHeader title="What needs attention" description="A short action brief before reading details or asking the Job Coach." />
+      <div className="job-brief-grid">
+        <div>
+          <span>Status</span>
+          <strong>{normalizeStatus(job.application_status)}</strong>
+        </div>
+        <div>
+          <span>Priority</span>
+          <strong>{annotation.priority}</strong>
+        </div>
+        <div>
+          <span>Reason saved</span>
+          <strong>{annotation.saveReason || "Not set"}</strong>
+        </div>
+      </div>
+      <div className="next-action-callout">
+        <p className="eyebrow">Next step</p>
+        <h3>{annotation.nextStep || "Decide whether this role is worth tailoring for."}</h3>
+        <p>Use Resume Fit first if you are unsure, then move to Notes or Pipeline controls.</p>
+      </div>
+      <div className="quick-actions">
+        <Button type="button" onClick={() => setWorkspaceTab("fit")}>Review fit</Button>
+        <Button type="button" variant="secondary" onClick={() => setWorkspaceTab("description")}>Read description</Button>
+        <Button type="button" variant="ghost" onClick={() => setWorkspaceTab("notes")}>Open notes</Button>
+      </div>
+    </Panel>
   );
 }
 

@@ -64,37 +64,44 @@ export function CoachPage({ jobs, resumes, annotations, thread, messages, messag
         </Panel>
       </div>
 
-      <Panel className="career-coach-chat">
-        <SectionHeader eyebrow="Career Coach" title="Ask for strategy" description={GROUNDING_COPY.coach} />
-        {!thread ? (
-          <Button type="button" onClick={onCreateThread}>
-            <Sparkles size={16} /> Start Career Coach
-          </Button>
-        ) : (
-          <>
-            <div className="coach-transcript large" aria-live="polite">
-              {messages.length ? (
-                messages.slice(-10).map((item, index) => (
-                  <div key={`${item.role}-${index}`} className={`coach-message coach-message--${item.role}`}>
-                    <span>{item.role === "user" ? "You" : "Career Coach"}</span>
-                    <p>{item.content}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="muted">Ask what to prioritize this week, which jobs need action, or how to sequence follow-ups.</p>
-              )}
-              {sending ? <p className="thinking-line">Career Coach is thinking...</p> : null}
-            </div>
-            <form className="coach-input" onSubmit={onSendMessage}>
-              <label className="sr-only" htmlFor="career-coach-message">Message Career Coach</label>
-              <textarea id="career-coach-message" value={message} onChange={(event) => setMessage(event.target.value)} rows={1} placeholder="Ask for job-search strategy..." />
-              <Button type="submit" size="icon" aria-label="Send message" disabled={sending || !message.trim()}>
-                <Send size={16} />
-              </Button>
-            </form>
-          </>
-        )}
-      </Panel>
+      <details className="career-coach-chat">
+        <summary>
+          <span>
+            <strong>Open Career Coach chat</strong>
+            <small>{GROUNDING_COPY.coach}</small>
+          </span>
+        </summary>
+        <Panel>
+          {!thread ? (
+            <Button type="button" onClick={onCreateThread}>
+              <Sparkles size={16} /> Start Career Coach
+            </Button>
+          ) : (
+            <>
+              <div className="coach-transcript large" aria-live="polite">
+                {messages.length ? (
+                  messages.slice(-10).map((item, index) => (
+                    <div key={`${item.role}-${index}`} className={`coach-message coach-message--${item.role}`}>
+                      <span>{item.role === "user" ? "You" : "Career Coach"}</span>
+                      <p>{item.content}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted">Ask what to prioritize this week, which jobs need action, or how to sequence follow-ups.</p>
+                )}
+                {sending ? <p className="thinking-line">Career Coach is thinking...</p> : null}
+              </div>
+              <form className="coach-input" onSubmit={onSendMessage}>
+                <label className="sr-only" htmlFor="career-coach-message">Message Career Coach</label>
+                <textarea id="career-coach-message" value={message} onChange={(event) => setMessage(event.target.value)} rows={1} placeholder="Ask for job-search strategy..." />
+                <Button type="submit" size="icon" aria-label="Send message" disabled={sending || !message.trim()}>
+                  <Send size={16} />
+                </Button>
+              </form>
+            </>
+          )}
+        </Panel>
+      </details>
     </div>
   );
 }

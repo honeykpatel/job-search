@@ -6,7 +6,7 @@ import { Panel, SectionHeader } from "../../shared/components/ui/Panel";
 import { Field } from "../../shared/components/forms/Field";
 import { formatDate } from "../../shared/utils/format";
 
-export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadPending }) {
+export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadPending, metadata, updateMetadata }) {
   function jobsUsingResume(resumeId) {
     return jobs.filter((job) => Number(job.resume_id) === Number(resumeId)).length;
   }
@@ -45,8 +45,15 @@ export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadP
               <div>
                 <p className="eyebrow">Resume</p>
                 <h3>{resume.filename}</h3>
-                <p>Target role: Not set</p>
+                <p>Best used for: {metadata[resume.id]?.targetRole || "Add target role"}</p>
               </div>
+              <Field label="Target role">
+                <input
+                  value={metadata[resume.id]?.targetRole || ""}
+                  onChange={(event) => updateMetadata(resume.id, { targetRole: event.target.value })}
+                  placeholder="Frontend engineer, product manager..."
+                />
+              </Field>
               <dl className="definition-list">
                 <div>
                   <dt>Last updated</dt>
@@ -59,6 +66,9 @@ export function ResumesPage({ resumes, jobs, uploadResume, deleteResume, uploadP
               </dl>
               <div className="resume-card__footer">
                 <Badge tone="info">{jobsUsingResume(resume.id)} jobs</Badge>
+                <Badge tone={metadata[resume.id]?.targetRole ? "strong" : "warning"}>
+                  {metadata[resume.id]?.targetRole ? "Ready to match" : "Needs target"}
+                </Badge>
                 <Button type="button" variant="ghost" size="sm" onClick={() => deleteResume(resume.id)} aria-label={`Delete ${resume.filename}`}>
                   <Trash2 size={15} /> Delete
                 </Button>

@@ -1,5 +1,5 @@
 import { LogOut, Menu, Moon, Sun, X } from "lucide-react";
-import { NAV_ITEMS, PRODUCT_LOOP } from "../../shared/constants/product";
+import { NAV_ITEMS } from "../../shared/constants/product";
 import { Button } from "../../shared/components/ui/Button";
 import { initials } from "../../shared/utils/format";
 
@@ -55,12 +55,6 @@ export function AppLayout({
             );
           })}
         </nav>
-
-        <div className="product-loop" aria-label="Product workflow">
-          {PRODUCT_LOOP.map((step) => (
-            <span key={step}>{step}</span>
-          ))}
-        </div>
 
         <div className="sidebar-account">
           <span className="avatar" aria-hidden="true">
