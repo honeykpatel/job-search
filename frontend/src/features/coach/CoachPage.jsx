@@ -1,4 +1,5 @@
 import { Send, Sparkles } from "lucide-react";
+import { AiThinking } from "../../shared/components/feedback/AiThinking";
 import { Badge } from "../../shared/components/ui/Badge";
 import { Button } from "../../shared/components/ui/Button";
 import { Panel, SectionHeader } from "../../shared/components/ui/Panel";
@@ -100,7 +101,7 @@ export function CoachPage({ jobs, resumes, annotations, thread, messages, messag
                 ) : (
                   <p className="muted">Ask what to prioritize this week, which jobs need action, or how to sequence follow-ups.</p>
                 )}
-                {sending ? <p className="thinking-line">Career Coach is thinking...</p> : null}
+                {sending ? <AiThinking label="Career Coach is thinking" /> : null}
               </div>
               <form className="coach-input" onSubmit={onSendMessage}>
                 <label className="sr-only" htmlFor="career-coach-message">Message Career Coach</label>

@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { AppLayout } from "./app/layouts/AppLayout";
 import { AuthShell } from "./features/auth/AuthShell";
 import { CoachPage } from "./features/coach/CoachPage";
@@ -11,6 +12,7 @@ import { ResumesPage } from "./features/resumes/ResumesPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PageSkeleton } from "./shared/components/feedback/Skeleton";
 import { apiRequest, createWorkspaceApi } from "./shared/lib/api";
+import { motion } from "./shared/lib/motion";
 import { useJobAnnotations } from "./shared/hooks/useJobAnnotations";
 import { useResumeMetadata } from "./shared/hooks/useResumeMetadata";
 import { getJobId, normalizeStatus } from "./shared/utils/format";
@@ -554,7 +556,17 @@ export default function App() {
       mobileNavOpen={mobileNavOpen}
       setMobileNavOpen={setMobileNavOpen}
     >
-      {renderPage()}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={page}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+        >
+          {renderPage()}
+        </motion.div>
+      </AnimatePresence>
     </AppLayout>
   );
 }

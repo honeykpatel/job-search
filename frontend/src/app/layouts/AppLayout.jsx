@@ -51,7 +51,7 @@ export function AppLayout({
                 onClick={() => selectPage(item.id)}
                 aria-current={active ? "page" : undefined}
               >
-                <Icon size={18} aria-hidden="true" />
+                <Icon className="nav-item__icon" aria-hidden="true" />
                 <span>{item.label}</span>
               </button>
             );

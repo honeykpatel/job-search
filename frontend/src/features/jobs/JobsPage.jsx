@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowUpRight, Bot, RefreshCcw, Search, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AiThinking } from "../../shared/components/feedback/AiThinking";
 import { EmptyState } from "../../shared/components/feedback/EmptyState";
 import { Button } from "../../shared/components/ui/Button";
 import { Badge } from "../../shared/components/ui/Badge";
@@ -498,7 +499,7 @@ function JobCoachPanel({ thread, messages, message, setMessage, onCreateThread, 
             ) : (
               <p className="muted">Ask how to tailor this resume, prepare for screening, or clarify skill gaps.</p>
             )}
-            {sending ? <p className="thinking-line">Job Coach is thinking...</p> : null}
+            {sending ? <AiThinking label="Job Coach is thinking" /> : null}
           </div>
           <form className="coach-input" onSubmit={onSendMessage}>
             <label className="sr-only" htmlFor="job-coach-message">Message Job Coach</label>

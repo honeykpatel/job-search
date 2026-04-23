@@ -1,14 +1,22 @@
-import { BriefcaseBusiness, ClipboardList, Compass, FileText, Home, Settings, Sparkles } from "lucide-react";
+import {
+  BriefcaseIcon,
+  ClipboardDocumentListIcon,
+  Cog6ToothIcon,
+  DocumentTextIcon,
+  HomeIcon,
+  MapIcon,
+  SparklesIcon,
+} from "@heroicons/react/24/outline";
 
 export const PRODUCT_LOOP = ["Discover", "Review", "Tailor", "Track", "Follow up"];
 
 export const NAV_ITEMS = [
-  { id: "home", label: "Home", icon: Home },
-  { id: "jobs", label: "Jobs", icon: BriefcaseBusiness },
-  { id: "pipeline", label: "Pipeline", icon: ClipboardList },
-  { id: "resumes", label: "Resumes", icon: FileText },
-  { id: "coach", label: "Coach", icon: Sparkles },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "home", label: "Home", icon: HomeIcon },
+  { id: "jobs", label: "Jobs", icon: BriefcaseIcon },
+  { id: "pipeline", label: "Pipeline", icon: ClipboardDocumentListIcon },
+  { id: "resumes", label: "Resumes", icon: DocumentTextIcon },
+  { id: "coach", label: "Coach", icon: SparklesIcon },
+  { id: "settings", label: "Settings", icon: Cog6ToothIcon },
 ];
 
 export const PIPELINE_STAGES = ["Saved", "Applied", "Interview", "Offer", "Rejected", "Archived"];
@@ -32,5 +40,5 @@ export const GROUNDING_COPY = {
 };
 
 export const EMPTY_ICONS = {
-  Compass,
+  Compass: MapIcon,
 };

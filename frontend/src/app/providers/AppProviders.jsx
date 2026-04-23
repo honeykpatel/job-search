@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MotionConfig } from "motion/react";
+import { MotionConfig } from "framer-motion";
 import { useState } from "react";
 
 export function AppProviders({ children }) {
