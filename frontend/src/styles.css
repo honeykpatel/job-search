@@ -688,6 +688,14 @@ a:focus-visible {
   padding-bottom: 0.55rem;
 }
 
+.job-priority-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(280px, 0.82fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+  align-items: start;
+}
+
 .job-workspace-tabs button {
   min-height: 38px;
   border: 1px solid transparent;
@@ -775,6 +783,77 @@ a:focus-visible {
   display: grid;
   gap: 1rem;
   padding: clamp(1.05rem, 2vw, 1.5rem);
+}
+
+.grounding-graph {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand), transparent 68%);
+  border-radius: 20px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface), transparent 4%), color-mix(in srgb, var(--brand), transparent 94%));
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.grounding-graph__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.grounding-graph__lines path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--brand), transparent 26%);
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.grounding-node {
+  position: relative;
+  display: grid;
+  gap: 0.18rem;
+  min-height: 88px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-2), transparent 12%);
+  padding: 0.9rem;
+}
+
+.grounding-node span {
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.grounding-node strong {
+  font-size: 0.98rem;
+  letter-spacing: -0.03em;
+}
+
+.grounding-node small {
+  color: var(--muted);
+}
+
+.grounding-node--hub {
+  border-color: color-mix(in srgb, var(--brand), transparent 48%);
+  background: color-mix(in srgb, var(--brand), transparent 90%);
+}
+
+.grounding-node__pulse {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--brand);
 }
 
 .ai-insights__header {
@@ -951,11 +1030,9 @@ a:focus-visible {
 }
 
 .job-coach-panel {
-  position: sticky;
-  top: 188px;
   display: grid;
   gap: 0.8rem;
-  max-height: calc(100dvh - 208px);
+  min-height: 100%;
   overflow: hidden;
 }
 
@@ -1525,7 +1602,7 @@ a:focus-visible {
   .home-grid,
   .strategy-grid,
   .settings-grid,
-  .job-workspace__grid,
+  .job-priority-grid,
   .auth-screen {
     grid-template-columns: 1fr;
   }
@@ -1540,6 +1617,14 @@ a:focus-visible {
   .pipeline-column__header {
     position: static;
     max-height: none;
+  }
+
+  .grounding-graph {
+    grid-template-columns: 1fr;
+  }
+
+  .grounding-graph__lines {
+    display: none;
   }
 
   .job-workspace__controls {

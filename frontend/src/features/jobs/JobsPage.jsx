@@ -44,6 +44,7 @@ export function JobsPage({
   const [workspaceTab, setWorkspaceTab] = useState("overview");
   const jobId = getJobId(selectedJob);
   const annotation = { priority: "Medium", nextStep: "", dueDate: "", saveReason: "", ...(annotations[jobId] || {}) };
+  const selectedResume = resumes.find((resume) => Number(resume.id) === Number(selectedResumeId)) || null;
 
   useEffect(() => {
     setNotesDraft(selectedJob?.application_notes || "");
@@ -200,10 +201,8 @@ export function JobsPage({
             <div className="job-workspace-tabs" role="tablist" aria-label="Job workspace sections">
               {[
                 ["overview", "Overview"],
-                ["fit", "Fit"],
                 ["description", "Description"],
                 ["notes", "Notes"],
-                ["coach", "Coach"],
               ].map(([id, label]) => (
                 <button
                   key={id}
@@ -263,70 +262,53 @@ export function JobsPage({
               </Field>
             </Panel>
 
-            <div className="job-workspace__grid">
-              <motion.div className="job-workspace__main" key={`${jobId}-${workspaceTab}`} {...scaleInProps(reduceMotion)}>
-                {workspaceTab === "overview" ? (
-                  <JobOverview job={selectedJob} annotation={annotation} setWorkspaceTab={setWorkspaceTab} />
-                ) : null}
-                {workspaceTab === "fit" ? (
-                  <JobInsights insights={jobCoach.insights} loading={jobCoach.insightsLoading} onRefresh={jobCoach.onRefreshInsights} resumeSelected={Boolean(selectedResumeId)} />
-                ) : null}
-                {workspaceTab === "description" ? (
-                  <Panel>
-                    <SectionHeader title="Job description" description="Original posting, formatted for reading." />
-                    <p className="long-copy">{compactText(selectedJob.description, "No detailed job description was provided by the source.")}</p>
-                    {selectedJob.url ? (
-                      <Button asChild variant="ghost" size="sm">
-                        <a href={selectedJob.url} target="_blank" rel="noreferrer">
-                          Open source <ArrowUpRight size={15} />
-                        </a>
-                      </Button>
-                    ) : null}
-                  </Panel>
-                ) : null}
-                {workspaceTab === "notes" ? (
-                  <Panel>
-                    <SectionHeader title="Notes" description="Private notes for this opportunity. Saved when you leave the field." />
-                    <textarea
-                      rows={8}
-                      value={notesDraft}
-                      onChange={(event) => setNotesDraft(event.target.value)}
-                      onBlur={() => onApplicationUpdate(selectedJob, { notes: notesDraft, status: normalizeStatus(selectedJob.application_status), resume_id: selectedResumeId || selectedJob.resume_id || null })}
-                      placeholder="Add interview details, recruiter names, or tailoring ideas."
-                    />
-                  </Panel>
-                ) : null}
-                {workspaceTab === "coach" ? <JobCoachPanel {...jobCoach} selectedJob={selectedJob} selectedResumeId={selectedResumeId} /> : null}
+            <div className="job-priority-grid">
+              <motion.div {...revealProps(reduceMotion, 0.08)}>
+                <JobInsights
+                  insights={jobCoach.insights}
+                  loading={jobCoach.insightsLoading}
+                  onRefresh={jobCoach.onRefreshInsights}
+                  resumeSelected={Boolean(selectedResumeId)}
+                  selectedJob={selectedJob}
+                  selectedResume={selectedResume}
+                  reduceMotion={reduceMotion}
+                />
               </motion.div>
-              {workspaceTab !== "coach" ? (
-                <motion.div {...revealProps(reduceMotion, 0.1)}>
-                  <Panel className="job-side-summary" as="aside">
-                  <SectionHeader title="Next action" description="Keep the role moving." />
-                  <dl className="definition-list">
-                    <div>
-                      <dt>Status</dt>
-                      <dd>{normalizeStatus(selectedJob.application_status)}</dd>
-                    </div>
-                    <div>
-                      <dt>Priority</dt>
-                      <dd>{annotation.priority}</dd>
-                    </div>
-                    <div>
-                      <dt>Next step</dt>
-                      <dd>{annotation.nextStep || "Not set"}</dd>
-                    </div>
-                    <div>
-                      <dt>Due</dt>
-                      <dd>{annotation.dueDate || "Not set"}</dd>
-                    </div>
-                  </dl>
-                  <Button type="button" variant="secondary" onClick={() => setWorkspaceTab("coach")}>
-                    Open Job Coach
-                  </Button>
-                  </Panel>
-                </motion.div>
-              ) : null}
+              <motion.div {...revealProps(reduceMotion, 0.12)}>
+                <JobCoachPanel {...jobCoach} selectedJob={selectedJob} selectedResumeId={selectedResumeId} />
+              </motion.div>
             </div>
+
+            <motion.div className="job-workspace__main" key={`${jobId}-${workspaceTab}`} {...scaleInProps(reduceMotion)}>
+              {workspaceTab === "overview" ? (
+                <JobOverview job={selectedJob} annotation={annotation} setWorkspaceTab={setWorkspaceTab} />
+              ) : null}
+              {workspaceTab === "description" ? (
+                <Panel>
+                  <SectionHeader title="Job description" description="Original posting, formatted for reading." />
+                  <p className="long-copy">{compactText(selectedJob.description, "No detailed job description was provided by the source.")}</p>
+                  {selectedJob.url ? (
+                    <Button asChild variant="ghost" size="sm">
+                      <a href={selectedJob.url} target="_blank" rel="noreferrer">
+                        Open source <ArrowUpRight size={15} />
+                      </a>
+                    </Button>
+                  ) : null}
+                </Panel>
+              ) : null}
+              {workspaceTab === "notes" ? (
+                <Panel>
+                  <SectionHeader title="Notes" description="Private notes for this opportunity. Saved when you leave the field." />
+                  <textarea
+                    rows={8}
+                    value={notesDraft}
+                    onChange={(event) => setNotesDraft(event.target.value)}
+                    onBlur={() => onApplicationUpdate(selectedJob, { notes: notesDraft, status: normalizeStatus(selectedJob.application_status), resume_id: selectedResumeId || selectedJob.resume_id || null })}
+                    placeholder="Add interview details, recruiter names, or tailoring ideas."
+                  />
+                </Panel>
+              ) : null}
+            </motion.div>
           </>
         ) : (
           <EmptyState title="Select a job to start" description="The workspace will show job details, Resume Fit, Skill Gaps, and the Job Coach." />
@@ -378,7 +360,7 @@ function JobWorkspaceHeader({ job }) {
   );
 }
 
-function JobInsights({ insights, loading, onRefresh, resumeSelected }) {
+function JobInsights({ insights, loading, onRefresh, resumeSelected, selectedJob, selectedResume, reduceMotion }) {
   const fit = fitLabelFromInsights(insights);
   const requirements = insights?.important_skills || insights?.key_requirements || [];
   const gaps = insights?.skills_to_upgrade || insights?.skill_gaps || [];
@@ -397,6 +379,7 @@ function JobInsights({ insights, loading, onRefresh, resumeSelected }) {
         </Button>
       </div>
       {!resumeSelected ? <p className="inline-warning">Choose a resume to generate grounded Job Coach insights.</p> : null}
+      <GroundingGraph job={selectedJob} resume={selectedResume} reduceMotion={reduceMotion} />
       <div className="fit-summary">
         <div className="fit-summary__score">
           <span>Fit</span>
@@ -419,6 +402,58 @@ function JobInsights({ insights, loading, onRefresh, resumeSelected }) {
         </div>
       </div>
     </Panel>
+  );
+}
+
+function GroundingGraph({ job, resume, reduceMotion }) {
+  const lineAnimation = reduceMotion
+    ? {}
+    : {
+        initial: { pathLength: 0, opacity: 0.45 },
+        animate: { pathLength: 1, opacity: 1 },
+        transition: { duration: 0.7, ease: "easeOut" },
+      };
+
+  return (
+    <div className="grounding-graph" aria-label="AI guidance grounding map">
+      <svg className="grounding-graph__lines" viewBox="0 0 520 180" preserveAspectRatio="none" aria-hidden="true">
+        <motion.path d="M110 56 C180 56, 192 90, 260 90" {...lineAnimation} />
+        <motion.path d="M110 124 C180 124, 192 90, 260 90" {...lineAnimation} transition={{ duration: 0.7, delay: reduceMotion ? 0 : 0.1, ease: "easeOut" }} />
+      </svg>
+      <motion.div className="grounding-node grounding-node--source" {...(reduceMotion ? {} : { initial: { opacity: 0, x: -8 }, animate: { opacity: 1, x: 0 }, transition: { duration: 0.3 } })}>
+        <span>Job</span>
+        <strong>{getJobTitle(job)}</strong>
+        <small>{getJobCompany(job)}</small>
+      </motion.div>
+      <motion.div className="grounding-node grounding-node--source" {...(reduceMotion ? {} : { initial: { opacity: 0, x: -8 }, animate: { opacity: 1, x: 0 }, transition: { duration: 0.3, delay: 0.06 } })}>
+        <span>Resume</span>
+        <strong>{resume?.filename || "Select a resume"}</strong>
+        <small>{resume ? "Selected input" : "Required for fit analysis"}</small>
+      </motion.div>
+      <motion.div
+        className="grounding-node grounding-node--hub"
+        {...(reduceMotion
+          ? {}
+          : {
+              initial: { opacity: 0, scale: 0.98 },
+              animate: { opacity: 1, scale: 1 },
+              transition: { duration: 0.34, delay: 0.12 },
+            })}
+      >
+        <motion.span
+          className="grounding-node__pulse"
+          {...(reduceMotion
+            ? {}
+            : {
+                animate: { scale: [1, 1.08, 1], opacity: [0.7, 1, 0.7] },
+                transition: { duration: 2.4, repeat: Infinity, ease: "easeInOut" },
+              })}
+        />
+        <span>Linked context</span>
+        <strong>AI Guidance</strong>
+        <small>Based on this job and selected resume</small>
+      </motion.div>
+    </div>
   );
 }
 
