@@ -26,8 +26,9 @@ const signUpSchema = z
     path: ["confirmPassword"],
   });
 
-export function AuthShell({ mode, setMode, onSubmit, onGuest, submitting, loading, error, notice, authAvailable }) {
+export function AuthShell({ mode, setMode, onSubmit, onGuest, submitting, loading, error, notice, authAvailable, theme = "dark" }) {
   const schema = mode === "sign-up" ? signUpSchema : signInSchema;
+  const logoSrc = theme === "light" ? "/JobPilotLogoBlue.png" : "/JobPilotLogo.png";
   const {
     register,
     handleSubmit,
@@ -38,7 +39,7 @@ export function AuthShell({ mode, setMode, onSubmit, onGuest, submitting, loadin
     <main className="auth-screen">
       <section className="auth-hero" aria-labelledby="auth-title">
         <div className="auth-hero__brand">
-          <img src="/JobPilotLogo.png" alt="" />
+          <img src={logoSrc} alt="" />
           <span>JobPilot</span>
         </div>
         <p className="eyebrow">Discover &gt; Review &gt; Tailor &gt; Track &gt; Follow up</p>

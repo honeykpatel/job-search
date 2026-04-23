@@ -534,6 +534,7 @@ export default function App() {
         error={authError}
         notice={notice}
         authAvailable={Boolean(supabaseClient) && !authError}
+        theme={theme}
       />
     );
   }

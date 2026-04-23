@@ -15,6 +15,8 @@ export function AppLayout({
   mobileNavOpen,
   setMobileNavOpen,
 }) {
+  const logoSrc = theme === "light" ? "/JobPilotLogoBlue.png" : "/JobPilotLogo.png";
+
   function selectPage(pageId) {
     onPageChange(pageId);
     setMobileNavOpen(false);
@@ -27,7 +29,7 @@ export function AppLayout({
       </a>
       <aside className={`workspace-sidebar ${mobileNavOpen ? "is-open" : ""}`} aria-label="Primary navigation">
         <div className="brand-block">
-          <img className="brand-block__logo" src="/JobPilotLogo.png" alt="" />
+          <img className="brand-block__logo" src={logoSrc} alt="" />
           <div>
             <p className="brand-block__name">JobPilot</p>
             <p className="brand-block__tagline">AI-assisted job search</p>
